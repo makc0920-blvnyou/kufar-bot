@@ -1,85 +1,83 @@
 import asyncio
 import os
-import threading
-
+import sys
+from aiohttp import web
 from aiogram import Bot, Dispatcher
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from flask import Flask
+from aiogram.fsm.storage.memory import MemoryStorage
 from loguru import logger
 
 from config import BOT_TOKEN, CHAT_ID, ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
 from database.db import init_db
 from bot.handlers import router
-from scheduler.jobs import check_kufar, analyze_prices, set_scheduler_status
+from scheduler.jobs import start_scheduler, stop_scheduler
 
-web_app = Flask(__name__)
+logger.remove()
+logger.add(sys.stderr, level="INFO")
 
+async def handle_health(request):
+    """Health check endpoint для Render"""
+    return web.Response(text="OK")
 
-@web_app.route("/")
-@web_app.route("/health")
-def health():
-    return "OK", 200
-
-
-def run_web():
+async def init_web_server():
+    """Запуск веб-сервера для health checks"""
+    app = web.Application()
+    app.router.add_get('/health', handle_health)
+    app.router.add_get('/', handle_health)
+    
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Render передаёт порт через переменную окружения PORT
     port = int(os.environ.get("PORT", 8080))
-    web_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    
+    logger.info(f"✅ Web server запущен на порту {port}")
+    logger.info(f"✅ Health check доступен: http://0.0.0.0:{port}/health")
+    return runner
 
-
-async def main() -> None:
-    logger.info("Запуск Kufar iPhone Monitor")
+async def main():
+    logger.info("🚀 Запуск Kufar iPhone Monitor")
+    logger.info(f"PORT из окружения: {os.environ.get('PORT', 'NOT SET')}")
 
     if not BOT_TOKEN:
-        logger.error("BOT_TOKEN не задан в .env")
+        logger.error("❌ BOT_TOKEN не задан в .env")
         return
 
     if CHAT_ID == 0:
-        logger.error("CHAT_ID не задан в .env")
+        logger.error("❌ CHAT_ID не задан в .env")
         return
 
-    threading.Thread(target=run_web, daemon=True).start()
-
+    # Инициализация БД
     await init_db()
+    logger.info("✅ База данных инициализирована")
 
+    # Создание бота
     bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher()
+    dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
 
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(
-        check_kufar,
-        trigger="interval",
-        minutes=CHECK_INTERVAL_MINUTES,
-        args=[bot],
-        id="check_kufar",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        analyze_prices,
-        trigger="cron",
-        hour=10,
-        minute=0,
-        args=[bot],
-        id="analyze_prices",
-        replace_existing=True,
-    )
-    scheduler.start()
-    set_scheduler_status(True)
+    # Запуск веб-сервера (ОБЯЗАТЕЛЬНО для Render Free Tier)
+    web_runner = await init_web_server()
+    
+    # Запуск планировщика задач
+    await start_scheduler(dp, bot)
+    logger.info(f"✅ Планировщик запущен (интервал: {CHECK_INTERVAL_MINUTES} мин)")
 
-    logger.info(
-        f"Бот запущен. Интервал проверки: {CHECK_INTERVAL_MINUTES} мин., "
-        f"чаты: {ALL_CHAT_IDS}"
-    )
+    logger.info(f"✅ Бот запущен. Чаты: {ALL_CHAT_IDS}")
+    logger.info(" Ожидание обновлений от Telegram...")
 
     try:
+        # Запуск polling
         await dp.start_polling(bot)
+    except KeyboardInterrupt:
+        logger.info(" Получен KeyboardInterrupt")
     finally:
-        logger.info("Остановка бота...")
-        scheduler.shutdown(wait=False)
-        set_scheduler_status(False)
+        logger.info("⏹️  Остановка бота...")
+        await stop_scheduler()
+        await web_runner.cleanup()
         await bot.session.close()
-        logger.info("Бот остановлен")
-
+        logger.info("✅ Бот остановлен")
 
 if __name__ == "__main__":
     asyncio.run(main())
