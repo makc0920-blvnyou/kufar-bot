@@ -88,13 +88,58 @@ async def get_all_user_prices(chat_id: int) -> dict[tuple[str, str], float]:
         return {(r[0], r[1]): r[2] for r in rows}
 
 
+KNOWN_MODELS: list[tuple[str, str]] = [
+    ("iPhone 7", "32 ГБ"), ("iPhone 7", "128 ГБ"), ("iPhone 7", "256 ГБ"),
+    ("iPhone 7 Plus", "32 ГБ"), ("iPhone 7 Plus", "128 ГБ"), ("iPhone 7 Plus", "256 ГБ"),
+    ("iPhone 8", "64 ГБ"), ("iPhone 8", "128 ГБ"), ("iPhone 8", "256 ГБ"),
+    ("iPhone 8 Plus", "64 ГБ"), ("iPhone 8 Plus", "128 ГБ"), ("iPhone 8 Plus", "256 ГБ"),
+    ("iPhone X", "64 ГБ"), ("iPhone X", "256 ГБ"),
+    ("iPhone XR", "64 ГБ"), ("iPhone XR", "128 ГБ"), ("iPhone XR", "256 ГБ"),
+    ("iPhone XS", "64 ГБ"), ("iPhone XS", "256 ГБ"), ("iPhone XS", "512 ГБ"),
+    ("iPhone XS Max", "64 ГБ"), ("iPhone XS Max", "256 ГБ"), ("iPhone XS Max", "512 ГБ"),
+    ("iPhone 11", "64 ГБ"), ("iPhone 11", "128 ГБ"), ("iPhone 11", "256 ГБ"),
+    ("iPhone 11 Pro", "64 ГБ"), ("iPhone 11 Pro", "256 ГБ"), ("iPhone 11 Pro", "512 ГБ"),
+    ("iPhone 11 Pro Max", "64 ГБ"), ("iPhone 11 Pro Max", "256 ГБ"), ("iPhone 11 Pro Max", "512 ГБ"),
+    ("iPhone SE (2-го поколения)", "64 ГБ"), ("iPhone SE (2-го поколения)", "128 ГБ"), ("iPhone SE (2-го поколения)", "256 ГБ"),
+    ("iPhone 12", "64 ГБ"), ("iPhone 12", "128 ГБ"), ("iPhone 12", "256 ГБ"),
+    ("iPhone 12 mini", "64 ГБ"), ("iPhone 12 mini", "128 ГБ"), ("iPhone 12 mini", "256 ГБ"),
+    ("iPhone 12 Pro", "128 ГБ"), ("iPhone 12 Pro", "256 ГБ"), ("iPhone 12 Pro", "512 ГБ"),
+    ("iPhone 12 Pro Max", "128 ГБ"), ("iPhone 12 Pro Max", "256 ГБ"), ("iPhone 12 Pro Max", "512 ГБ"),
+    ("iPhone 13", "128 ГБ"), ("iPhone 13", "256 ГБ"), ("iPhone 13", "512 ГБ"),
+    ("iPhone 13 mini", "128 ГБ"), ("iPhone 13 mini", "256 ГБ"), ("iPhone 13 mini", "512 ГБ"),
+    ("iPhone 13 Pro", "128 ГБ"), ("iPhone 13 Pro", "256 ГБ"), ("iPhone 13 Pro", "512 ГБ"), ("iPhone 13 Pro", "1 ТБ"),
+    ("iPhone 13 Pro Max", "128 ГБ"), ("iPhone 13 Pro Max", "256 ГБ"), ("iPhone 13 Pro Max", "512 ГБ"), ("iPhone 13 Pro Max", "1 ТБ"),
+    ("iPhone SE (3-го поколения)", "64 ГБ"), ("iPhone SE (3-го поколения)", "128 ГБ"), ("iPhone SE (3-го поколения)", "256 ГБ"),
+    ("iPhone 14", "128 ГБ"), ("iPhone 14", "256 ГБ"), ("iPhone 14", "512 ГБ"),
+    ("iPhone 14 Plus", "128 ГБ"), ("iPhone 14 Plus", "256 ГБ"), ("iPhone 14 Plus", "512 ГБ"),
+    ("iPhone 14 Pro", "128 ГБ"), ("iPhone 14 Pro", "256 ГБ"), ("iPhone 14 Pro", "512 ГБ"), ("iPhone 14 Pro", "1 ТБ"),
+    ("iPhone 14 Pro Max", "128 ГБ"), ("iPhone 14 Pro Max", "256 ГБ"), ("iPhone 14 Pro Max", "512 ГБ"), ("iPhone 14 Pro Max", "1 ТБ"),
+    ("iPhone 15", "128 ГБ"), ("iPhone 15", "256 ГБ"), ("iPhone 15", "512 ГБ"),
+    ("iPhone 15 Plus", "128 ГБ"), ("iPhone 15 Plus", "256 ГБ"), ("iPhone 15 Plus", "512 ГБ"),
+    ("iPhone 15 Pro", "128 ГБ"), ("iPhone 15 Pro", "256 ГБ"), ("iPhone 15 Pro", "512 ГБ"), ("iPhone 15 Pro", "1 ТБ"),
+    ("iPhone 15 Pro Max", "128 ГБ"), ("iPhone 15 Pro Max", "256 ГБ"), ("iPhone 15 Pro Max", "512 ГБ"), ("iPhone 15 Pro Max", "1 ТБ"),
+    ("iPhone 16", "128 ГБ"), ("iPhone 16", "256 ГБ"), ("iPhone 16", "512 ГБ"),
+    ("iPhone 16 Plus", "128 ГБ"), ("iPhone 16 Plus", "256 ГБ"), ("iPhone 16 Plus", "512 ГБ"),
+    ("iPhone 16 Pro", "128 ГБ"), ("iPhone 16 Pro", "256 ГБ"), ("iPhone 16 Pro", "512 ГБ"), ("iPhone 16 Pro", "1 ТБ"),
+    ("iPhone 16 Pro Max", "128 ГБ"), ("iPhone 16 Pro Max", "256 ГБ"), ("iPhone 16 Pro Max", "512 ГБ"), ("iPhone 16 Pro Max", "1 ТБ"),
+    ("iPhone 16e", "128 ГБ"), ("iPhone 16e", "256 ГБ"), ("iPhone 16e", "512 ГБ"),
+    ("iPhone 17", "256 ГБ"), ("iPhone 17", "512 ГБ"),
+    ("iPhone 17 Pro", "256 ГБ"), ("iPhone 17 Pro", "512 ГБ"), ("iPhone 17 Pro", "1 ТБ"),
+    ("iPhone 17 Pro Max", "256 ГБ"), ("iPhone 17 Pro Max", "512 ГБ"), ("iPhone 17 Pro Max", "1 ТБ"), ("iPhone 17 Pro Max", "2 ТБ"),
+    ("iPhone Air", "256 ГБ"), ("iPhone Air", "512 ГБ"), ("iPhone Air", "1 ТБ"),
+    ("iPhone 17e", "256 ГБ"), ("iPhone 17e", "512 ГБ"),
+]
+
+
 async def get_distinct_models() -> list[tuple[str, str]]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute(
-            "SELECT DISTINCT model, storage FROM listings WHERE model != '' AND storage != '' ORDER BY model, storage"
+            "SELECT DISTINCT model, storage FROM listings WHERE model != '' AND storage != ''"
         )
         rows = await cursor.fetchall()
-        return [(r[0], r[1]) for r in rows]
+        db_models = set((r[0], r[1]) for r in rows)
+    all_models = set(KNOWN_MODELS) | db_models
+    return sorted(all_models)
 
 
 async def is_listing_exists(listing_id: str) -> bool:
