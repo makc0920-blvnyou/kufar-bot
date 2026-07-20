@@ -7,6 +7,8 @@ from aiogram import Bot
 from loguru import logger
 
 from config import ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
+import re as _re
+
 from database.db import is_listing_exists, save_listing, get_total_listings, MODEL_PRICES
 from parser.kufar import fetch_listings
 from bot.sender import send_listing
@@ -32,6 +34,19 @@ def get_stats() -> dict[str, Any]:
         "interval": CHECK_INTERVAL_MINUTES,
         "scheduler_running": _scheduler_running,
     }
+
+
+_PRICE_KEYS = sorted(MODEL_PRICES, key=len, reverse=True)
+
+
+def _find_model_price(title: str, model: str) -> float | None:
+    mp = MODEL_PRICES.get(model)
+    if mp is not None:
+        return float(mp)
+    for key in _PRICE_KEYS:
+        if key.lower() in title.lower():
+            return float(MODEL_PRICES[key])
+    return None
 
 
 def set_scheduler_status(running: bool) -> None:
@@ -87,17 +102,18 @@ async def check_kufar(bot: Bot) -> str:
             listing_price = listing.get("price_raw")
 
             sent_any = False
-            model_price = MODEL_PRICES.get(model)
+            title = listing.get("title", "")
+            model_price = _find_model_price(title, model)
 
-            if model_price is not None and listing_price is not None and listing_price > model_price:
+            if model_price is not None and listing_price is not None and listing_price >= model_price:
                 logger.info(
-                    f"Пропущено ({listing_price:,.0f} > лимит {model_price:,.0f}): "
-                    f"{listing.get('title','')} — {listing.get('price','')}"
+                    f"Пропущено ({listing_price:,.0f} >= лимит {model_price:,.0f}): "
+                    f"{title} — {listing.get('price','')}"
                 )
                 continue
 
             if model_price is not None:
-                listing["user_price"] = float(model_price)
+                listing["user_price"] = model_price
 
             for cid in ALL_CHAT_IDS:
                 if await send_listing(bot, cid, listing):
