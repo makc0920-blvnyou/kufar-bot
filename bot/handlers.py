@@ -2,6 +2,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from loguru import logger
 
 from database.db import get_user_price, set_user_price, get_distinct_models
 from scheduler.jobs import check_kufar, get_stats
@@ -40,18 +41,19 @@ async def _build_menu_keyboard(chat_id: int) -> InlineKeyboardBuilder:
 
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
-    stats = get_stats()
     chat_id = message.chat.id
+    logger.info(f"Получен /start от chat_id={chat_id} ({message.from_user.username or 'без username'})")
 
+    stats = get_stats()
     lines = [
         "👋 <b>Kufar iPhone Monitor</b>",
         "",
         "Бот мониторит iPhone на kufar.by и показывает объявления,",
-        f"которые <b>минимум на {BUYER_DISCOUNT*100:.0f}%</b> дешевле вашей цены.",
+        "дешевле установленной вами цены.",
         "",
         "📌 <b>Как работает:</b>",
-        f"1️⃣ Установите цену для модели (кнопки ниже)",
-        f"2️⃣ Бот покажет объявления дешевле вашей цены на {BUYER_DISCOUNT*100:.0f}%+",
+        "1️⃣ Установите цену для модели (кнопки ниже)",
+        "2️⃣ Бот покажет объявления дешевле вашей цены",
         "3️⃣ Если цена не задана — модель не отслеживается",
         "",
         f"📊 Проверок: {stats['check_count']} | Найдено: {stats['total_found']}",
@@ -89,7 +91,7 @@ async def cb_select_model(callback: CallbackQuery) -> None:
     ]
     if current:
         text_parts.append(f"Текущая цена: <b>{current:,.0f} BYN</b>")
-        text_parts.append(f"Показывать объявления от <b>{current * (1 - BUYER_DISCOUNT):,.0f} BYN</b> и ниже")
+        text_parts.append(f"Показывать объявления <b>до {current:,.0f} BYN</b>")
         text_parts.append("")
         text_parts.append("✏️ Отправьте новую цену числом (например: 1200)")
         text_parts.append("Или нажмите <b>Удалить</b> чтобы убрать модель из отслеживания")
@@ -199,14 +201,13 @@ async def handle_price_input(message: Message) -> None:
         return
 
     await set_user_price(chat_id, model, storage, price)
-    threshold = price * (1 - BUYER_DISCOUNT)
 
     _waiting_for_price.pop((chat_id, model, storage), None)
 
     builder = await _build_menu_keyboard(chat_id)
     await message.answer(
         f"✅ <b>{model} {storage}</b> — {price:,.0f} BYN\n"
-        f"Буду показывать объявления от <b>{threshold:,.0f} BYN</b> и ниже\n\n"
+        f"Буду показывать объявления <b>до {price:,.0f} BYN</b>\n\n"
         f"📱 <b>Меню</b>",
         reply_markup=builder.as_markup(),
     )
@@ -215,3 +216,13 @@ async def handle_price_input(message: Message) -> None:
 @router.callback_query()
 async def cb_fallback(callback: CallbackQuery) -> None:
     await callback.answer("Меню устарело, отправьте /menu", show_alert=True)
+
+
+@router.message()
+async def any_message(message: Message) -> None:
+    cid = message.chat.id
+    logger.info(f"Сообщение от chat_id={cid}: {message.text or '(не текст)'}")
+    if message.text and not message.text.startswith("/") and not message.text.isdigit():
+        await message.answer(
+            f"👋 Привет! Используй /start чтобы открыть меню."
+        )

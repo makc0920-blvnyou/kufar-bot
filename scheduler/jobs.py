@@ -18,7 +18,7 @@ _total_found: int = 0
 _last_check_time: datetime | None = None
 _scheduler_running: bool = False
 
-BUYER_DISCOUNT = 0.1
+
 
 
 def get_stats() -> dict[str, Any]:
@@ -92,14 +92,13 @@ async def check_kufar(bot: Bot) -> str:
             for cid in ALL_CHAT_IDS:
                 user_price = await get_user_price(cid, model, storage)
                 if user_price is not None and user_price > 0:
-                    threshold = user_price * (1 - BUYER_DISCOUNT)
-                    if listing_price is not None and listing_price <= threshold:
+                    if listing_price is not None and listing_price <= user_price:
                         listing["user_price"] = user_price
                         if await send_listing(bot, cid, listing):
                             sent_any = True
                     else:
                         logger.info(
-                            f"Пропущено ({listing_price:,.0f} > {threshold:,.0f}, "
+                            f"Пропущено ({listing_price:,.0f} > {user_price:,.0f}, "
                             f"цена пользователя {user_price:,.0f}): "
                             f"{listing.get('title','')} — {listing.get('price','')}"
                         )
