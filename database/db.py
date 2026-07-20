@@ -7,6 +7,46 @@ from datetime import datetime, timedelta
 
 from config import DATABASE_PATH
 
+MODEL_PRICES: dict[str, int] = {
+    "iPhone 8": 100,
+    "iPhone 8 Plus": 100,
+    "iPhone X": 150,
+    "iPhone XR": 200,
+    "iPhone XS": 200,
+    "iPhone XS Max": 210,
+    "iPhone 11": 220,
+    "iPhone 11 Pro": 280,
+    "iPhone 11 Pro Max": 300,
+    "iPhone SE (2-го поколения)": 180,
+    "iPhone 12": 300,
+    "iPhone 12 mini": 300,
+    "iPhone 12 Pro": 520,
+    "iPhone 12 Pro Max": 520,
+    "iPhone 13": 550,
+    "iPhone 13 mini": 550,
+    "iPhone 13 Pro": 700,
+    "iPhone 13 Pro Max": 700,
+    "iPhone SE (3-го поколения)": 300,
+    "iPhone 14": 700,
+    "iPhone 14 Plus": 700,
+    "iPhone 14 Pro": 1000,
+    "iPhone 14 Pro Max": 1000,
+    "iPhone 15": 1000,
+    "iPhone 15 Plus": 1000,
+    "iPhone 15 Pro": 1460,
+    "iPhone 15 Pro Max": 1460,
+    "iPhone 16": 1500,
+    "iPhone 16 Plus": 1500,
+    "iPhone 16 Pro": 2000,
+    "iPhone 16 Pro Max": 2000,
+    "iPhone 16e": 1500,
+    "iPhone 17": 1950,
+    "iPhone 17 Pro": 1950,
+    "iPhone 17 Pro Max": 1950,
+    "iPhone Air": 1950,
+    "iPhone 17e": 1950,
+}
+
 
 async def init_db() -> None:
     db_dir = os.path.dirname(DATABASE_PATH) or "."
@@ -39,81 +79,9 @@ async def init_db() -> None:
             except Exception:
                 pass
 
-        await db.execute("DROP TABLE IF EXISTS user_prices")
-        await db.execute(
-            """
-            CREATE TABLE user_prices (
-                chat_id INTEGER NOT NULL,
-                model TEXT NOT NULL,
-                price REAL NOT NULL,
-                PRIMARY KEY (chat_id, model)
-            )
-            """
-        )
-
         await db.commit()
 
     logger.info("База данных инициализирована")
-
-
-async def get_user_price(chat_id: int, model: str) -> float | None:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
-            "SELECT price FROM user_prices WHERE chat_id = ? AND model = ?",
-            (chat_id, model),
-        )
-        row = await cursor.fetchone()
-        return row[0] if row else None
-
-
-async def set_user_price(chat_id: int, model: str, price: float) -> None:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute(
-            """
-            INSERT OR REPLACE INTO user_prices (chat_id, model, price)
-            VALUES (?, ?, ?)
-            """,
-            (chat_id, model, price),
-        )
-        await db.commit()
-
-
-async def get_all_user_prices(chat_id: int) -> dict[str, float]:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
-            "SELECT model, price FROM user_prices WHERE chat_id = ?",
-            (chat_id,),
-        )
-        rows = await cursor.fetchall()
-        return {r[0]: r[1] for r in rows}
-
-
-KNOWN_MODELS: list[str] = [
-    "iPhone 7", "iPhone 7 Plus",
-    "iPhone 8", "iPhone 8 Plus",
-    "iPhone X", "iPhone XR", "iPhone XS", "iPhone XS Max",
-    "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
-    "iPhone SE (2-го поколения)",
-    "iPhone 12", "iPhone 12 mini", "iPhone 12 Pro", "iPhone 12 Pro Max",
-    "iPhone 13", "iPhone 13 mini", "iPhone 13 Pro", "iPhone 13 Pro Max",
-    "iPhone SE (3-го поколения)",
-    "iPhone 14", "iPhone 14 Plus", "iPhone 14 Pro", "iPhone 14 Pro Max",
-    "iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max",
-    "iPhone 16", "iPhone 16 Plus", "iPhone 16 Pro", "iPhone 16 Pro Max", "iPhone 16e",
-    "iPhone 17", "iPhone 17 Pro", "iPhone 17 Pro Max",
-    "iPhone Air", "iPhone 17e",
-]
-
-
-async def get_distinct_models() -> list[str]:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        cursor = await db.execute(
-            "SELECT DISTINCT model FROM listings WHERE model != ''"
-        )
-        rows = await cursor.fetchall()
-        db_models = set(r[0] for r in rows)
-    all_models = set(KNOWN_MODELS) | db_models
-    return sorted(all_models)
 
 
 async def is_listing_exists(listing_id: str) -> bool:

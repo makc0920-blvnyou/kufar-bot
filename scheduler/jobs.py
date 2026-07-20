@@ -7,7 +7,7 @@ from aiogram import Bot
 from loguru import logger
 
 from config import ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
-from database.db import is_listing_exists, save_listing, get_total_listings, get_user_price, get_all_user_prices
+from database.db import is_listing_exists, save_listing, get_total_listings, MODEL_PRICES
 from parser.kufar import fetch_listings
 from bot.sender import send_listing
 
@@ -17,8 +17,6 @@ _check_count: int = 0
 _total_found: int = 0
 _last_check_time: datetime | None = None
 _scheduler_running: bool = False
-
-
 
 
 def get_stats() -> dict[str, Any]:
@@ -89,23 +87,21 @@ async def check_kufar(bot: Bot) -> str:
             listing_price = listing.get("price_raw")
 
             sent_any = False
+            model_price = MODEL_PRICES.get(model)
+
+            if model_price is not None and listing_price is not None and listing_price > model_price:
+                logger.info(
+                    f"Пропущено ({listing_price:,.0f} > лимит {model_price:,.0f}): "
+                    f"{listing.get('title','')} — {listing.get('price','')}"
+                )
+                continue
+
+            if model_price is not None:
+                listing["user_price"] = float(model_price)
+
             for cid in ALL_CHAT_IDS:
-                user_price = await get_user_price(cid, model)
-                if user_price is not None and user_price > 0:
-                    if listing_price is not None and listing_price <= user_price:
-                        listing["user_price"] = user_price
-                        if await send_listing(bot, cid, listing):
-                            sent_any = True
-                    else:
-                        logger.info(
-                            f"Пропущено ({listing_price:,.0f} > {user_price:,.0f}, "
-                            f"цена пользователя {user_price:,.0f}): "
-                            f"{listing.get('title','')} — {listing.get('price','')}"
-                        )
-                else:
-                    # Если цена не задана — всё равно отправляем
-                    if await send_listing(bot, cid, listing):
-                        sent_any = True
+                if await send_listing(bot, cid, listing):
+                    sent_any = True
 
             if sent_any:
                 _total_found += 1
