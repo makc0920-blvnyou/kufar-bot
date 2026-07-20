@@ -7,11 +7,12 @@ from aiogram import Bot
 from loguru import logger
 
 from config import ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
-from database.db import is_listing_exists, save_listing, get_total_listings, get_prices_for_group, calc_quartiles
+from database.db import is_listing_exists, save_listing, get_total_listings, get_recent_prices_for_group, calc_quartiles
 from parser.kufar import fetch_listings
 from bot.sender import send_listing, format_listing
 
 MIN_SAMPLE = 5
+PRICE_WINDOW_HOURS = 12
 
 _lock = asyncio.Lock()
 
@@ -71,6 +72,8 @@ async def check_kufar(bot: Bot) -> str:
             model = listing.get("model", "")
             storage = listing.get("storage", "")
 
+            now_iso = datetime.now().isoformat()
+
             await save_listing(
                 listing_id=listing_id,
                 title=listing.get("title", ""),
@@ -82,13 +85,14 @@ async def check_kufar(bot: Bot) -> str:
                 model=model,
                 storage=storage,
                 price_raw=listing.get("price_raw"),
+                fetched_at=now_iso,
             )
 
             listing_price = listing.get("price_raw")
             is_deal = False
 
             if model and storage and listing_price is not None:
-                prices = await get_prices_for_group(model, storage)
+                prices = await get_recent_prices_for_group(model, storage, hours=PRICE_WINDOW_HOURS)
                 if len(prices) >= MIN_SAMPLE:
                     q1, q2, q3 = calc_quartiles(prices)
                     listing["median"] = q2

@@ -3,6 +3,8 @@ import os
 import aiosqlite
 from loguru import logger
 
+from datetime import datetime, timedelta
+
 from config import DATABASE_PATH
 
 
@@ -30,6 +32,7 @@ async def init_db() -> None:
             "model TEXT NOT NULL DEFAULT ''",
             "storage TEXT NOT NULL DEFAULT ''",
             "price_raw REAL",
+            "fetched_at TEXT NOT NULL DEFAULT ''",
         ]:
             try:
                 await db.execute(f"ALTER TABLE listings ADD COLUMN {col_def}")
@@ -61,28 +64,31 @@ async def save_listing(
     model: str = "",
     storage: str = "",
     price_raw: float | None = None,
+    fetched_at: str = "",
 ) -> None:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute(
             """
             INSERT OR IGNORE INTO listings
-                (id, title, price, city, url, description, found_at, model, storage, price_raw)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, title, price, city, url, description, found_at, model, storage, price_raw, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (listing_id, title, price, city, url, description, found_at, model, storage, price_raw),
+            (listing_id, title, price, city, url, description, found_at, model, storage, price_raw, fetched_at),
         )
         await db.commit()
 
 
-async def get_prices_for_group(model: str, storage: str) -> list[float]:
+async def get_recent_prices_for_group(model: str, storage: str, hours: int = 12) -> list[float]:
+    cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute(
             """
             SELECT price_raw FROM listings
             WHERE model = ? AND storage = ? AND price_raw IS NOT NULL
+              AND fetched_at >= ?
             ORDER BY price_raw
             """,
-            (model, storage),
+            (model, storage, cutoff),
         )
         rows = await cursor.fetchall()
         return [r[0] for r in rows]

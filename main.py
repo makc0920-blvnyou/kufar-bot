@@ -4,15 +4,18 @@ import sys
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from config import BOT_TOKEN, CHAT_ID, ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
 from database.db import init_db
 from bot.handlers import router
-from scheduler.jobs import start_scheduler, stop_scheduler
+from scheduler.jobs import check_kufar
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
+
+scheduler = AsyncIOScheduler()
 
 async def handle_health(request):
     """Health check endpoint для Render"""
@@ -60,21 +63,29 @@ async def main():
     # Запуск веб-сервера (ОБЯЗАТЕЛЬНО для Render Free Tier)
     web_runner = await init_web_server()
     
-    # Запуск планировщика задач
-    await start_scheduler(dp, bot)
+    # Настройка планировщика
+    scheduler.add_job(
+        check_kufar,
+        trigger="interval",
+        minutes=CHECK_INTERVAL_MINUTES,
+        args=[bot],
+        id="check_kufar",
+        replace_existing=True,
+    )
+    scheduler.start()
     logger.info(f"✅ Планировщик запущен (интервал: {CHECK_INTERVAL_MINUTES} мин)")
 
     logger.info(f"✅ Бот запущен. Чаты: {ALL_CHAT_IDS}")
-    logger.info(" Ожидание обновлений от Telegram...")
+    logger.info("Ожидание обновлений от Telegram...")
 
     try:
         # Запуск polling
         await dp.start_polling(bot)
     except KeyboardInterrupt:
-        logger.info(" Получен KeyboardInterrupt")
+        logger.info("Получен KeyboardInterrupt")
     finally:
         logger.info("⏹️  Остановка бота...")
-        await stop_scheduler()
+        scheduler.shutdown(wait=False)
         await web_runner.cleanup()
         await bot.session.close()
         logger.info("✅ Бот остановлен")
