@@ -40,6 +40,9 @@ async def init_web_server():
     return runner
 
 async def main():
+    # Стартуем веб-сервер НЕМЕДЛЕННО, чтобы Render увидел порт
+    web_runner = await init_web_server()
+
     logger.info("🚀 Запуск Kufar iPhone Monitor")
     logger.info(f"PORT из окружения: {os.environ.get('PORT', 'NOT SET')}")
 
@@ -60,9 +63,6 @@ async def main():
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
 
-    # Запуск веб-сервера (ОБЯЗАТЕЛЬНО для Render Free Tier)
-    web_runner = await init_web_server()
-    
     # Настройка планировщика
     scheduler.add_job(
         check_kufar,
@@ -80,9 +80,11 @@ async def main():
 
     try:
         # Запуск polling
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, skip_updates=True)
     except KeyboardInterrupt:
         logger.info("Получен KeyboardInterrupt")
+    except Exception as e:
+        logger.exception(f"Критическая ошибка: {e}")
     finally:
         logger.info("⏹️  Остановка бота...")
         scheduler.shutdown(wait=False)
