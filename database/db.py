@@ -39,14 +39,14 @@ async def init_db() -> None:
             except Exception:
                 pass
 
+        await db.execute("DROP TABLE IF EXISTS user_prices")
         await db.execute(
             """
-            CREATE TABLE IF NOT EXISTS user_prices (
+            CREATE TABLE user_prices (
                 chat_id INTEGER NOT NULL,
                 model TEXT NOT NULL,
-                storage TEXT NOT NULL,
                 price REAL NOT NULL,
-                PRIMARY KEY (chat_id, model, storage)
+                PRIMARY KEY (chat_id, model)
             )
             """
         )
@@ -56,88 +56,62 @@ async def init_db() -> None:
     logger.info("База данных инициализирована")
 
 
-async def get_user_price(chat_id: int, model: str, storage: str) -> float | None:
+async def get_user_price(chat_id: int, model: str) -> float | None:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute(
-            "SELECT price FROM user_prices WHERE chat_id = ? AND model = ? AND storage = ?",
-            (chat_id, model, storage),
+            "SELECT price FROM user_prices WHERE chat_id = ? AND model = ?",
+            (chat_id, model),
         )
         row = await cursor.fetchone()
         return row[0] if row else None
 
 
-async def set_user_price(chat_id: int, model: str, storage: str, price: float) -> None:
+async def set_user_price(chat_id: int, model: str, price: float) -> None:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.execute(
             """
-            INSERT OR REPLACE INTO user_prices (chat_id, model, storage, price)
-            VALUES (?, ?, ?, ?)
+            INSERT OR REPLACE INTO user_prices (chat_id, model, price)
+            VALUES (?, ?, ?)
             """,
-            (chat_id, model, storage, price),
+            (chat_id, model, price),
         )
         await db.commit()
 
 
-async def get_all_user_prices(chat_id: int) -> dict[tuple[str, str], float]:
+async def get_all_user_prices(chat_id: int) -> dict[str, float]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute(
-            "SELECT model, storage, price FROM user_prices WHERE chat_id = ?",
+            "SELECT model, price FROM user_prices WHERE chat_id = ?",
             (chat_id,),
         )
         rows = await cursor.fetchall()
-        return {(r[0], r[1]): r[2] for r in rows}
+        return {r[0]: r[1] for r in rows}
 
 
-KNOWN_MODELS: list[tuple[str, str]] = [
-    ("iPhone 7", "32 ГБ"), ("iPhone 7", "128 ГБ"), ("iPhone 7", "256 ГБ"),
-    ("iPhone 7 Plus", "32 ГБ"), ("iPhone 7 Plus", "128 ГБ"), ("iPhone 7 Plus", "256 ГБ"),
-    ("iPhone 8", "64 ГБ"), ("iPhone 8", "128 ГБ"), ("iPhone 8", "256 ГБ"),
-    ("iPhone 8 Plus", "64 ГБ"), ("iPhone 8 Plus", "128 ГБ"), ("iPhone 8 Plus", "256 ГБ"),
-    ("iPhone X", "64 ГБ"), ("iPhone X", "256 ГБ"),
-    ("iPhone XR", "64 ГБ"), ("iPhone XR", "128 ГБ"), ("iPhone XR", "256 ГБ"),
-    ("iPhone XS", "64 ГБ"), ("iPhone XS", "256 ГБ"), ("iPhone XS", "512 ГБ"),
-    ("iPhone XS Max", "64 ГБ"), ("iPhone XS Max", "256 ГБ"), ("iPhone XS Max", "512 ГБ"),
-    ("iPhone 11", "64 ГБ"), ("iPhone 11", "128 ГБ"), ("iPhone 11", "256 ГБ"),
-    ("iPhone 11 Pro", "64 ГБ"), ("iPhone 11 Pro", "256 ГБ"), ("iPhone 11 Pro", "512 ГБ"),
-    ("iPhone 11 Pro Max", "64 ГБ"), ("iPhone 11 Pro Max", "256 ГБ"), ("iPhone 11 Pro Max", "512 ГБ"),
-    ("iPhone SE (2-го поколения)", "64 ГБ"), ("iPhone SE (2-го поколения)", "128 ГБ"), ("iPhone SE (2-го поколения)", "256 ГБ"),
-    ("iPhone 12", "64 ГБ"), ("iPhone 12", "128 ГБ"), ("iPhone 12", "256 ГБ"),
-    ("iPhone 12 mini", "64 ГБ"), ("iPhone 12 mini", "128 ГБ"), ("iPhone 12 mini", "256 ГБ"),
-    ("iPhone 12 Pro", "128 ГБ"), ("iPhone 12 Pro", "256 ГБ"), ("iPhone 12 Pro", "512 ГБ"),
-    ("iPhone 12 Pro Max", "128 ГБ"), ("iPhone 12 Pro Max", "256 ГБ"), ("iPhone 12 Pro Max", "512 ГБ"),
-    ("iPhone 13", "128 ГБ"), ("iPhone 13", "256 ГБ"), ("iPhone 13", "512 ГБ"),
-    ("iPhone 13 mini", "128 ГБ"), ("iPhone 13 mini", "256 ГБ"), ("iPhone 13 mini", "512 ГБ"),
-    ("iPhone 13 Pro", "128 ГБ"), ("iPhone 13 Pro", "256 ГБ"), ("iPhone 13 Pro", "512 ГБ"), ("iPhone 13 Pro", "1 ТБ"),
-    ("iPhone 13 Pro Max", "128 ГБ"), ("iPhone 13 Pro Max", "256 ГБ"), ("iPhone 13 Pro Max", "512 ГБ"), ("iPhone 13 Pro Max", "1 ТБ"),
-    ("iPhone SE (3-го поколения)", "64 ГБ"), ("iPhone SE (3-го поколения)", "128 ГБ"), ("iPhone SE (3-го поколения)", "256 ГБ"),
-    ("iPhone 14", "128 ГБ"), ("iPhone 14", "256 ГБ"), ("iPhone 14", "512 ГБ"),
-    ("iPhone 14 Plus", "128 ГБ"), ("iPhone 14 Plus", "256 ГБ"), ("iPhone 14 Plus", "512 ГБ"),
-    ("iPhone 14 Pro", "128 ГБ"), ("iPhone 14 Pro", "256 ГБ"), ("iPhone 14 Pro", "512 ГБ"), ("iPhone 14 Pro", "1 ТБ"),
-    ("iPhone 14 Pro Max", "128 ГБ"), ("iPhone 14 Pro Max", "256 ГБ"), ("iPhone 14 Pro Max", "512 ГБ"), ("iPhone 14 Pro Max", "1 ТБ"),
-    ("iPhone 15", "128 ГБ"), ("iPhone 15", "256 ГБ"), ("iPhone 15", "512 ГБ"),
-    ("iPhone 15 Plus", "128 ГБ"), ("iPhone 15 Plus", "256 ГБ"), ("iPhone 15 Plus", "512 ГБ"),
-    ("iPhone 15 Pro", "128 ГБ"), ("iPhone 15 Pro", "256 ГБ"), ("iPhone 15 Pro", "512 ГБ"), ("iPhone 15 Pro", "1 ТБ"),
-    ("iPhone 15 Pro Max", "128 ГБ"), ("iPhone 15 Pro Max", "256 ГБ"), ("iPhone 15 Pro Max", "512 ГБ"), ("iPhone 15 Pro Max", "1 ТБ"),
-    ("iPhone 16", "128 ГБ"), ("iPhone 16", "256 ГБ"), ("iPhone 16", "512 ГБ"),
-    ("iPhone 16 Plus", "128 ГБ"), ("iPhone 16 Plus", "256 ГБ"), ("iPhone 16 Plus", "512 ГБ"),
-    ("iPhone 16 Pro", "128 ГБ"), ("iPhone 16 Pro", "256 ГБ"), ("iPhone 16 Pro", "512 ГБ"), ("iPhone 16 Pro", "1 ТБ"),
-    ("iPhone 16 Pro Max", "128 ГБ"), ("iPhone 16 Pro Max", "256 ГБ"), ("iPhone 16 Pro Max", "512 ГБ"), ("iPhone 16 Pro Max", "1 ТБ"),
-    ("iPhone 16e", "128 ГБ"), ("iPhone 16e", "256 ГБ"), ("iPhone 16e", "512 ГБ"),
-    ("iPhone 17", "256 ГБ"), ("iPhone 17", "512 ГБ"),
-    ("iPhone 17 Pro", "256 ГБ"), ("iPhone 17 Pro", "512 ГБ"), ("iPhone 17 Pro", "1 ТБ"),
-    ("iPhone 17 Pro Max", "256 ГБ"), ("iPhone 17 Pro Max", "512 ГБ"), ("iPhone 17 Pro Max", "1 ТБ"), ("iPhone 17 Pro Max", "2 ТБ"),
-    ("iPhone Air", "256 ГБ"), ("iPhone Air", "512 ГБ"), ("iPhone Air", "1 ТБ"),
-    ("iPhone 17e", "256 ГБ"), ("iPhone 17e", "512 ГБ"),
+KNOWN_MODELS: list[str] = [
+    "iPhone 7", "iPhone 7 Plus",
+    "iPhone 8", "iPhone 8 Plus",
+    "iPhone X", "iPhone XR", "iPhone XS", "iPhone XS Max",
+    "iPhone 11", "iPhone 11 Pro", "iPhone 11 Pro Max",
+    "iPhone SE (2-го поколения)",
+    "iPhone 12", "iPhone 12 mini", "iPhone 12 Pro", "iPhone 12 Pro Max",
+    "iPhone 13", "iPhone 13 mini", "iPhone 13 Pro", "iPhone 13 Pro Max",
+    "iPhone SE (3-го поколения)",
+    "iPhone 14", "iPhone 14 Plus", "iPhone 14 Pro", "iPhone 14 Pro Max",
+    "iPhone 15", "iPhone 15 Plus", "iPhone 15 Pro", "iPhone 15 Pro Max",
+    "iPhone 16", "iPhone 16 Plus", "iPhone 16 Pro", "iPhone 16 Pro Max", "iPhone 16e",
+    "iPhone 17", "iPhone 17 Pro", "iPhone 17 Pro Max",
+    "iPhone Air", "iPhone 17e",
 ]
 
 
-async def get_distinct_models() -> list[tuple[str, str]]:
+async def get_distinct_models() -> list[str]:
     async with aiosqlite.connect(DATABASE_PATH) as db:
         cursor = await db.execute(
-            "SELECT DISTINCT model, storage FROM listings WHERE model != '' AND storage != ''"
+            "SELECT DISTINCT model FROM listings WHERE model != ''"
         )
         rows = await cursor.fetchall()
-        db_models = set((r[0], r[1]) for r in rows)
+        db_models = set(r[0] for r in rows)
     all_models = set(KNOWN_MODELS) | db_models
     return sorted(all_models)
 

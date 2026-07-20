@@ -7,7 +7,7 @@ from aiogram import Bot
 from loguru import logger
 
 from config import ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
-from database.db import is_listing_exists, save_listing, get_total_listings, get_user_price
+from database.db import is_listing_exists, save_listing, get_total_listings, get_user_price, get_all_user_prices
 from parser.kufar import fetch_listings
 from bot.sender import send_listing
 
@@ -90,7 +90,7 @@ async def check_kufar(bot: Bot) -> str:
 
             sent_any = False
             for cid in ALL_CHAT_IDS:
-                user_price = await get_user_price(cid, model, storage)
+                user_price = await get_user_price(cid, model)
                 if user_price is not None and user_price > 0:
                     if listing_price is not None and listing_price <= user_price:
                         listing["user_price"] = user_price
@@ -103,9 +103,9 @@ async def check_kufar(bot: Bot) -> str:
                             f"{listing.get('title','')} — {listing.get('price','')}"
                         )
                 else:
-                    logger.debug(
-                        f"Цена не задана для {model} {storage} (чат {cid}), пропускаем"
-                    )
+                    # Если цена не задана — всё равно отправляем
+                    if await send_listing(bot, cid, listing):
+                        sent_any = True
 
             if sent_any:
                 _total_found += 1

@@ -9,9 +9,7 @@ from scheduler.jobs import check_kufar, get_stats
 
 router = Router()
 
-_model_map: dict[str, tuple[str, str]] = {}
-
-BUYER_DISCOUNT = 0.1
+_model_map: dict[str, str] = {}
 
 
 def _key(chat_id: int, idx: int) -> str:
@@ -23,15 +21,15 @@ async def _build_menu_keyboard(chat_id: int) -> InlineKeyboardBuilder:
     models = sorted(await get_distinct_models())
 
     builder = InlineKeyboardBuilder()
-    for i, (model, storage) in enumerate(models):
+    for i, model in enumerate(models):
         k = _key(chat_id, i)
-        _model_map[k] = (model, storage)
+        _model_map[k] = model
 
-        price = await get_user_price(chat_id, model, storage)
+        price = await get_user_price(chat_id, model)
         if price:
-            label = f"✅ {model} {storage} — {price:,.0f} BYN"
+            label = f"✅ {model} — {price:,.0f} BYN"
         else:
-            label = f"⬜ {model} {storage} — не задана"
+            label = f"⬜ {model} — не задана"
 
         builder.button(text=label, callback_data=f"price:{k}")
 
@@ -42,25 +40,33 @@ async def _build_menu_keyboard(chat_id: int) -> InlineKeyboardBuilder:
 @router.message(Command("start"))
 async def cmd_start(message: Message) -> None:
     chat_id = message.chat.id
-    logger.info(f"Получен /start от chat_id={chat_id} ({message.from_user.username or 'без username'})")
+    username = message.from_user.username if message.from_user else "без username"
+    logger.info(f"Получен /start от chat_id={chat_id} ({username})")
 
-    stats = get_stats()
-    lines = [
-        "👋 <b>Kufar iPhone Monitor</b>",
-        "",
-        "Бот мониторит iPhone на kufar.by и показывает объявления,",
-        "дешевле установленной вами цены.",
-        "",
-        "📌 <b>Как работает:</b>",
-        "1️⃣ Установите цену для модели (кнопки ниже)",
-        "2️⃣ Бот покажет объявления дешевле вашей цены",
-        "3️⃣ Если цена не задана — модель не отслеживается",
-        "",
-        f"📊 Проверок: {stats['check_count']} | Найдено: {stats['total_found']}",
-    ]
+    try:
+        stats = get_stats()
+        lines = [
+            "👋 <b>Kufar iPhone Monitor</b>",
+            "",
+            "Бот мониторит iPhone на kufar.by и показывает объявления",
+            "дешевле установленной вами цены.",
+            "",
+            "📌 <b>Как работает:</b>",
+            "1️⃣ Установите цену для модели (кнопки ниже)",
+            "2️⃣ Бот покажет объявления дешевле вашей цены",
+            "3️⃣ Если цена не задана — все объявления приходят без фильтра",
+            "",
+            f"📊 Проверок: {stats['check_count']} | Найдено: {stats['total_found']}",
+        ]
 
-    builder = await _build_menu_keyboard(chat_id)
-    await message.answer("\n".join(lines), reply_markup=builder.as_markup())
+        builder = await _build_menu_keyboard(chat_id)
+        await message.answer("\n".join(lines), reply_markup=builder.as_markup())
+    except Exception as e:
+        logger.exception(f"Ошибка в /start для chat_id={chat_id}: {e}")
+        try:
+            await message.answer("❌ Внутренняя ошибка, попробуйте /menu")
+        except Exception:
+            pass
 
 
 @router.message(Command("menu"))
@@ -73,20 +79,19 @@ async def cmd_menu(message: Message) -> None:
 @router.callback_query(F.data.startswith("price:"))
 async def cb_select_model(callback: CallbackQuery) -> None:
     key = callback.data.removeprefix("price:")
-    pair = _model_map.get(key)
-    if not pair:
+    model = _model_map.get(key)
+    if not model:
         await callback.answer("Модель устарела, откройте меню заново", show_alert=True)
         return
 
-    model, storage = pair
     chat_id = callback.message.chat.id
-    current = await get_user_price(chat_id, model, storage)
+    current = await get_user_price(chat_id, model)
 
     builder = InlineKeyboardBuilder()
     builder.button(text="⬅ Назад", callback_data="back_to_menu")
 
     text_parts = [
-        f"📱 <b>{model} {storage}</b>",
+        f"📱 <b>{model}</b>",
         "",
     ]
     if current:
@@ -94,10 +99,10 @@ async def cb_select_model(callback: CallbackQuery) -> None:
         text_parts.append(f"Показывать объявления <b>до {current:,.0f} BYN</b>")
         text_parts.append("")
         text_parts.append("✏️ Отправьте новую цену числом (например: 1200)")
-        text_parts.append("Или нажмите <b>Удалить</b> чтобы убрать модель из отслеживания")
+        text_parts.append("Или нажмите <b>Удалить</b> чтобы убрать фильтр")
         builder.button(text="🗑 Удалить", callback_data=f"delete:{key}")
     else:
-        text_parts.append("Цена не задана")
+        text_parts.append("Цена не задана — приходят все объявления")
         text_parts.append("")
         text_parts.append("✏️ Отправьте цену числом (например: 1200)")
 
@@ -107,7 +112,7 @@ async def cb_select_model(callback: CallbackQuery) -> None:
     await callback.message.edit_text("\n".join(text_parts), reply_markup=builder.as_markup())
     await callback.answer()
 
-    _waiting_for_price[(chat_id, model, storage)] = True
+    _waiting_for_price[chat_id] = model
 
 
 @router.callback_query(F.data == "back_to_menu")
@@ -124,27 +129,25 @@ async def cb_back_to_menu(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("delete:"))
 async def cb_delete_price(callback: CallbackQuery) -> None:
     key = callback.data.removeprefix("delete:")
-    pair = _model_map.get(key)
-    if not pair:
+    model = _model_map.get(key)
+    if not model:
         await callback.answer("Ошибка", show_alert=True)
         return
 
-    model, storage = pair
     chat_id = callback.message.chat.id
-    await set_user_price(chat_id, model, storage, 0)
+    await set_user_price(chat_id, model, 0)
 
-    await callback.answer("✅ Цена удалена", show_alert=True)
+    await callback.answer("✅ Фильтр удалён", show_alert=True)
     builder = await _build_menu_keyboard(chat_id)
     await callback.message.edit_text(
         "📱 <b>Настройка цен</b>\n\nНажмите на модель, чтобы установить цену.",
         reply_markup=builder.as_markup(),
     )
 
-    key_price = (chat_id, model, storage)
-    _waiting_for_price.pop(key_price, None)
+    _waiting_for_price.pop(chat_id, None)
 
 
-_waiting_for_price: dict[tuple[int, str, str], bool] = {}
+_waiting_for_price: dict[int, str] = {}
 
 
 @router.message(Command("check"))
@@ -181,16 +184,10 @@ async def cmd_status(message: Message) -> None:
 @router.message(F.text.regexp(r'^\d+$'))
 async def handle_price_input(message: Message) -> None:
     chat_id = message.chat.id
-    matched = None
-    for (c, m, s), _ in list(_waiting_for_price.items()):
-        if c == chat_id:
-            matched = (m, s)
-            break
-
-    if not matched:
+    model = _waiting_for_price.get(chat_id)
+    if not model:
         return
 
-    model, storage = matched
     try:
         price = float(message.text.strip())
         if price <= 0:
@@ -200,13 +197,12 @@ async def handle_price_input(message: Message) -> None:
         await message.reply("❌ Отправьте число (например: 1200)")
         return
 
-    await set_user_price(chat_id, model, storage, price)
-
-    _waiting_for_price.pop((chat_id, model, storage), None)
+    await set_user_price(chat_id, model, price)
+    _waiting_for_price.pop(chat_id, None)
 
     builder = await _build_menu_keyboard(chat_id)
     await message.answer(
-        f"✅ <b>{model} {storage}</b> — {price:,.0f} BYN\n"
+        f"✅ <b>{model}</b> — {price:,.0f} BYN\n"
         f"Буду показывать объявления <b>до {price:,.0f} BYN</b>\n\n"
         f"📱 <b>Меню</b>",
         reply_markup=builder.as_markup(),
@@ -221,8 +217,4 @@ async def cb_fallback(callback: CallbackQuery) -> None:
 @router.message()
 async def any_message(message: Message) -> None:
     cid = message.chat.id
-    logger.info(f"Сообщение от chat_id={cid}: {message.text or '(не текст)'}")
-    if message.text and not message.text.startswith("/") and not message.text.isdigit():
-        await message.answer(
-            f"👋 Привет! Используй /start чтобы открыть меню."
-        )
+    logger.info(f"Необработанное сообщение от chat_id={cid}: {message.text or '(не текст)'}")
