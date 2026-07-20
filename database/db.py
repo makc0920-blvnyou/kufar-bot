@@ -39,9 +39,62 @@ async def init_db() -> None:
             except Exception:
                 pass
 
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_prices (
+                chat_id INTEGER NOT NULL,
+                model TEXT NOT NULL,
+                storage TEXT NOT NULL,
+                price REAL NOT NULL,
+                PRIMARY KEY (chat_id, model, storage)
+            )
+            """
+        )
+
         await db.commit()
 
     logger.info("База данных инициализирована")
+
+
+async def get_user_price(chat_id: int, model: str, storage: str) -> float | None:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT price FROM user_prices WHERE chat_id = ? AND model = ? AND storage = ?",
+            (chat_id, model, storage),
+        )
+        row = await cursor.fetchone()
+        return row[0] if row else None
+
+
+async def set_user_price(chat_id: int, model: str, storage: str, price: float) -> None:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        await db.execute(
+            """
+            INSERT OR REPLACE INTO user_prices (chat_id, model, storage, price)
+            VALUES (?, ?, ?, ?)
+            """,
+            (chat_id, model, storage, price),
+        )
+        await db.commit()
+
+
+async def get_all_user_prices(chat_id: int) -> dict[tuple[str, str], float]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT model, storage, price FROM user_prices WHERE chat_id = ?",
+            (chat_id,),
+        )
+        rows = await cursor.fetchall()
+        return {(r[0], r[1]): r[2] for r in rows}
+
+
+async def get_distinct_models() -> list[tuple[str, str]]:
+    async with aiosqlite.connect(DATABASE_PATH) as db:
+        cursor = await db.execute(
+            "SELECT DISTINCT model, storage FROM listings WHERE model != '' AND storage != '' ORDER BY model, storage"
+        )
+        rows = await cursor.fetchall()
+        return [(r[0], r[1]) for r in rows]
 
 
 async def is_listing_exists(listing_id: str) -> bool:

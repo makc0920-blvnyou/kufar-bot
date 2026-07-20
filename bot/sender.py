@@ -12,7 +12,7 @@ def format_listing(listing: dict) -> str:
     price = escape(listing.get("price", "Цена не указана"))
     city = escape(listing.get("city", "Город не указан"))
     battery = listing.get("battery")
-    desc = escape(listing.get("description", "").strip())
+    desc = listing.get("description", "").strip()
     url = escape(listing.get("url", "#"))
 
     parts = [
@@ -21,18 +21,18 @@ def format_listing(listing: dict) -> str:
         f"📍 {city}",
     ]
 
-    q1 = listing.get("q1")
-    median = listing.get("median")
-    if q1 is not None and median is not None:
+    user_price = listing.get("user_price")
+    if user_price is not None:
+        raw = listing.get("price_raw", 0)
+        pct = ((user_price - raw) / user_price) * 100
         parts.append(
-            f"📊 Рынок: мед {median:,.0f} | Q1 {q1:,.0f} | "
-            f"🔥 <b>{listing.get('price_raw', 0):,.0f}</b> ≤ {q1:,.0f}"
+            f"🎯 Ваша цена: {user_price:,.0f} BYN  |  🔥 <b>-{pct:.0f}%</b>"
         )
 
     if battery:
         parts.append(f"🔋 АКБ: <b>{escape(battery)}</b>")
     if desc:
-        parts.append(f"   {desc}")
+        parts.append(f"   {escape(desc)}")
     parts.append(f"🔗 {url}")
 
     return "\n".join(parts)

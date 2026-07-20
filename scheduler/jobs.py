@@ -7,12 +7,9 @@ from aiogram import Bot
 from loguru import logger
 
 from config import ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
-from database.db import is_listing_exists, save_listing, get_total_listings, get_recent_prices_for_group, calc_quartiles
+from database.db import is_listing_exists, save_listing, get_total_listings, get_user_price
 from parser.kufar import fetch_listings
-from bot.sender import send_listing, format_listing
-
-MIN_SAMPLE = 5
-PRICE_WINDOW_HOURS = 12
+from bot.sender import send_listing
 
 _lock = asyncio.Lock()
 
@@ -20,6 +17,8 @@ _check_count: int = 0
 _total_found: int = 0
 _last_check_time: datetime | None = None
 _scheduler_running: bool = False
+
+BUYER_DISCOUNT = 0.1
 
 
 def get_stats() -> dict[str, Any]:
@@ -73,7 +72,6 @@ async def check_kufar(bot: Bot) -> str:
             storage = listing.get("storage", "")
 
             now_iso = datetime.now().isoformat()
-
             await save_listing(
                 listing_id=listing_id,
                 title=listing.get("title", ""),
@@ -89,48 +87,34 @@ async def check_kufar(bot: Bot) -> str:
             )
 
             listing_price = listing.get("price_raw")
-            is_deal = False
-
-            if model and storage and listing_price is not None:
-                prices = await get_recent_prices_for_group(model, storage, hours=PRICE_WINDOW_HOURS)
-                if len(prices) >= MIN_SAMPLE:
-                    q1, q2, q3 = calc_quartiles(prices)
-                    listing["median"] = q2
-                    listing["q1"] = q1
-                    listing["q3"] = q3
-                    listing["price_diff"] = round(listing_price - q2, 2)
-
-                    if listing_price <= q1:
-                        is_deal = True
-                    else:
-                        logger.info(
-                            f"Пропущено ({listing_price:.2f} > Q1 {q1:.2f}): "
-                            f"{listing.get('title','')} — {listing.get('price','')}"
-                        )
-                        continue
-                else:
-                    logger.info(
-                        f"Мало данных ({len(prices)} < {MIN_SAMPLE}) для {model} {storage}, "
-                        f"пропускаем фильтр и отправляем"
-                    )
-                    is_deal = True
-            else:
-                is_deal = True
-
-            if not is_deal:
-                continue
 
             sent_any = False
             for cid in ALL_CHAT_IDS:
-                if await send_listing(bot, cid, listing):
-                    sent_any = True
+                user_price = await get_user_price(cid, model, storage)
+                if user_price is not None and user_price > 0:
+                    threshold = user_price * (1 - BUYER_DISCOUNT)
+                    if listing_price is not None and listing_price <= threshold:
+                        listing["user_price"] = user_price
+                        if await send_listing(bot, cid, listing):
+                            sent_any = True
+                    else:
+                        logger.info(
+                            f"Пропущено ({listing_price:,.0f} > {threshold:,.0f}, "
+                            f"цена пользователя {user_price:,.0f}): "
+                            f"{listing.get('title','')} — {listing.get('price','')}"
+                        )
+                else:
+                    logger.debug(
+                        f"Цена не задана для {model} {storage} (чат {cid}), пропускаем"
+                    )
+
             if sent_any:
                 _total_found += 1
                 new_count += 1
 
         _last_check_time = datetime.now()
 
-        msg = f"Проверка #{_check_count}: найдено {new_count} новых объявлений"
+        msg = f"Проверка #{_check_count}: найдено {new_count} новых предложений"
         logger.info(msg)
 
         if new_count == 0:
@@ -166,7 +150,6 @@ async def analyze_prices(bot: Bot) -> str:
     lines: list[str] = [
         "📊 <b>Анализ рынка iPhone</b>",
         f"🏙 Минск | {datetime.now().strftime('%d.%m.%Y')}",
-        f"⚡ Сделка: цена ≤ Q1 (25% самых дешёвых)",
         "",
     ]
 
@@ -174,9 +157,15 @@ async def analyze_prices(bot: Bot) -> str:
         lines.append(f"<b>{model}</b>")
         for storage in sorted(groups[model]):
             prices = sorted(groups[model][storage])
-            q1, q2, q3 = calc_quartiles(prices)
+            n = len(prices)
+
+            def pct(k):
+                idx = max(0, min(n - 1, int(k * (n - 1))))
+                return prices[idx]
+
+            q1, q2, q3 = pct(0.25), pct(0.50), pct(0.75)
             lines.append(
-                f"  <b>{storage}</b> — {len(prices)} шт. | "
+                f"  <b>{storage}</b> — {n} шт. | "
                 f"мин {min(prices):,.0f} | "
                 f"Q1 {q1:,.0f} | "
                 f"мед {q2:,.0f} | "
