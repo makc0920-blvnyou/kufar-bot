@@ -103,6 +103,11 @@ async def check_kufar(bot: Bot) -> str:
 
             sent_any = False
             title = listing.get("title", "")
+
+            if listing_price is not None and listing_price < 95:
+                logger.info(f"Пропущено ({listing_price:,.0f} < 95): {title}")
+                continue
+
             model_price = _find_model_price(title, model)
 
             if model_price is not None and listing_price is not None and listing_price >= model_price:

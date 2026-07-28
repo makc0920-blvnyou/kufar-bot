@@ -174,14 +174,14 @@ def _extract_storage(ad: dict[str, Any]) -> str:
     return ""
 
 
-def _extract_image(raw: dict[str, Any]) -> str | None:
+def _extract_images(raw: dict[str, Any]) -> list[str]:
     images = raw.get("images", [])
-    if not images:
-        return None
-    path = images[0].get("path", "")
-    if not path:
-        return None
-    return f"https://rms.kufar.by/v1/gallery/{path}"
+    result = []
+    for img in images:
+        path = img.get("path", "")
+        if path:
+            result.append(f"https://rms.kufar.by/v1/gallery/{path}")
+    return result
 
 
 def _is_private(raw: dict[str, Any]) -> bool:
@@ -202,9 +202,9 @@ def parse_listing_raw(raw: dict[str, Any]) -> dict[str, Any] | None:
         "price": _extract_price(raw),
         "city": _extract_city(raw),
         "url": raw.get("ad_link") or f"https://www.kufar.by/item/{ad_id}",
-        "description": (raw.get("body") or raw.get("body_short") or "")[:1000],
+        "description": (raw.get("body") or raw.get("body_short") or "")[:2000],
         "date": raw.get("list_time", ""),
-        "image": _extract_image(raw),
+        "images": _extract_images(raw),
         "battery": _extract_battery(raw),
         "model": _extract_model(raw),
         "storage": _extract_storage(raw),

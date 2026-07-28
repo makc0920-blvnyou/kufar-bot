@@ -2,6 +2,7 @@ from html import escape
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
+from aiogram.types import InputMediaPhoto
 from loguru import logger
 
 from config import ADMIN_CHAT_ID
@@ -32,7 +33,7 @@ def format_listing(listing: dict) -> str:
     if battery:
         parts.append(f"🔋 АКБ: <b>{escape(battery)}</b>")
     if desc:
-        parts.append(f"   {escape(desc)}")
+        parts.append(f"{escape(desc)}")
     parts.append(f"🔗 {url}")
 
     return "\n".join(parts)
@@ -40,26 +41,32 @@ def format_listing(listing: dict) -> str:
 
 async def send_listing(bot: Bot, chat_id: int, listing: dict) -> bool:
     text = format_listing(listing)
-    image = listing.get("image")
+    images = listing.get("images", [])
     try:
-        if image:
+        if images:
             try:
-                await bot.send_photo(
-                    chat_id=chat_id,
-                    photo=image,
-                    caption=text,
-                    parse_mode=ParseMode.HTML,
-                )
-                logger.info(f"Отправлено объявление {listing.get('id', '?')} в чат {chat_id}")
+                media = [InputMediaPhoto(media=images[0], caption=text, parse_mode=ParseMode.HTML)]
+                for url in images[1:]:
+                    media.append(InputMediaPhoto(media=url))
+                await bot.send_media_group(chat_id=chat_id, media=media[:10])
+                logger.info(f"Отправлено объявление {listing.get('id', '?')} в чат {chat_id} ({len(images)} фото)")
                 return True
             except Exception:
-                logger.warning(f"Не удалось отправить фото для {listing.get('id', '?')}, отправляю текст")
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=text,
-                    parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False,
-                )
+                logger.warning(f"Не удалось отправить медиа-группу для {listing.get('id', '?')}, отправляю текст+фото")
+                try:
+                    await bot.send_photo(
+                        chat_id=chat_id,
+                        photo=images[0],
+                        caption=text,
+                        parse_mode=ParseMode.HTML,
+                    )
+                except Exception:
+                    await bot.send_message(
+                        chat_id=chat_id,
+                        text=text,
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=False,
+                    )
         else:
             await bot.send_message(
                 chat_id=chat_id,
