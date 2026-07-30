@@ -15,12 +15,10 @@ def format_listing(listing: dict) -> str:
     battery = listing.get("battery")
     desc = listing.get("description", "").strip()
     url = escape(listing.get("url", "#"))
+    is_17 = listing.get("is_17")
 
-    parts = [
-        f"📱 <b>{title}</b>",
-        f"💰 {price}",
-        f"📍 {city}",
-    ]
+    header = f"⭐ <b>{title}</b>" if is_17 else f"📱 <b>{title}</b>"
+    parts = [header, f"💰 {price}", f"📍 {city}"]
 
     user_price = listing.get("user_price")
     if user_price is not None:

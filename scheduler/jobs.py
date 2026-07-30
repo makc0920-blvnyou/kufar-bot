@@ -110,19 +110,31 @@ async def check_kufar(bot: Bot) -> str:
 
             model_price = _find_model_price(title, model)
 
+            is_17 = model in ("iPhone 17", "iPhone 17 Pro", "iPhone 17 Pro Max", "iPhone Air", "iPhone 17e") or "17" in title
+            if is_17:
+                model_price = 2100
+
             if model_price is not None and listing_price is not None and listing_price >= model_price:
-                logger.info(
-                    f"Пропущено ({listing_price:,.0f} >= лимит {model_price:,.0f}): "
-                    f"{title} — {listing.get('price','')}"
-                )
-                continue
+                if is_17:
+                    logger.info(f"17 дороже 2100 ({listing_price:,.0f}), отправляю только 475027162: {title}")
+                    listing["is_17"] = True
+                    if await send_listing(bot, 475027162, listing):
+                        sent_any = True
+                else:
+                    logger.info(
+                        f"Пропущено ({listing_price:,.0f} >= лимит {model_price:,.0f}): "
+                        f"{title} — {listing.get('price','')}"
+                    )
+                    continue
+            else:
+                if model_price is not None:
+                    listing["user_price"] = model_price
+                if is_17:
+                    listing["is_17"] = True
 
-            if model_price is not None:
-                listing["user_price"] = model_price
-
-            for cid in ALL_CHAT_IDS:
-                if await send_listing(bot, cid, listing):
-                    sent_any = True
+                for cid in ALL_CHAT_IDS:
+                    if await send_listing(bot, cid, listing):
+                        sent_any = True
 
             if sent_any:
                 _total_found += 1
