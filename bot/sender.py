@@ -23,10 +23,13 @@ def format_listing(listing: dict) -> str:
     user_price = listing.get("user_price")
     if user_price is not None:
         raw = listing.get("price_raw", 0)
-        pct = ((user_price - raw) / user_price) * 100
-        parts.append(
-            f"🎯 Ваша цена: {user_price:,.0f} BYN  |  🔥 <b>-{pct:.0f}%</b>"
-        )
+        if raw is not None and raw > 0:
+            pct = ((user_price - raw) / user_price) * 100
+            parts.append(
+                f"🎯 Ваша цена: {user_price:,.0f} BYN  |  🔥 <b>-{pct:.0f}%</b>"
+            )
+        else:
+            parts.append(f"🎯 Ваша цена: {user_price:,.0f} BYN")
 
     if battery:
         parts.append(f"🔋 АКБ: <b>{escape(battery)}</b>")
