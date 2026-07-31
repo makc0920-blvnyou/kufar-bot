@@ -84,6 +84,16 @@ async def check_kufar(bot: Bot) -> str:
             model = listing.get("model", "")
             storage = listing.get("storage", "")
 
+            title = listing.get("title", "")
+
+            if model in ("iPhone 7", "iPhone 7 Plus", "iPhone 8", "iPhone 8 Plus", "iPhone SE (1-го поколения)"):
+                logger.info(f"Пропущено (модель 8 и ниже): {title}")
+                continue
+
+            if any(w in title.lower() for w in ("чехол", "чехлы", "кейс", "бампер", "защитное стекло", "защитная пленка", "защитная плёнка", "стекло для")):
+                logger.info(f"Пропущено (аксессуар): {title}")
+                continue
+
             now_iso = datetime.now().isoformat()
             await save_listing(
                 listing_id=listing_id,
@@ -102,7 +112,6 @@ async def check_kufar(bot: Bot) -> str:
             listing_price = listing.get("price_raw")
 
             sent_any = False
-            title = listing.get("title", "")
 
             if listing_price is not None and listing_price < 95:
                 logger.info(f"Пропущено ({listing_price:,.0f} < 95): {title}")

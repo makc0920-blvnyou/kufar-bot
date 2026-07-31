@@ -8,8 +8,6 @@ from datetime import datetime, timedelta
 from config import DATABASE_PATH
 
 MODEL_PRICES: dict[str, int] = {
-    "iPhone 8": 100,
-    "iPhone 8 Plus": 100,
     "iPhone X": 150,
     "iPhone XR": 200,
     "iPhone XS": 200,
@@ -17,7 +15,7 @@ MODEL_PRICES: dict[str, int] = {
     "iPhone 11": 220,
     "iPhone 11 Pro": 280,
     "iPhone 11 Pro Max": 300,
-    "iPhone SE (2-го поколения)": 180,
+    "iPhone SE (2-го поколения)": 170,
     "iPhone 12": 300,
     "iPhone 12 mini": 300,
     "iPhone 12 Pro": 520,
@@ -26,7 +24,7 @@ MODEL_PRICES: dict[str, int] = {
     "iPhone 13 mini": 550,
     "iPhone 13 Pro": 700,
     "iPhone 13 Pro Max": 700,
-    "iPhone SE (3-го поколения)": 300,
+    "iPhone SE (3-го поколения)": 250,
     "iPhone 14": 700,
     "iPhone 14 Plus": 700,
     "iPhone 14 Pro": 1000,
