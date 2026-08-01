@@ -19,7 +19,7 @@ ALL_CHAT_IDS: list[int] = [CHAT_ID] + ADDITIONAL_CHAT_IDS if CHAT_ID else ADDITI
 raw_admin = os.getenv("ADMIN_CHAT_ID")
 ADMIN_CHAT_ID: int | None = int(raw_admin) if raw_admin and raw_admin.strip() else None
 
-CHECK_INTERVAL_MINUTES: int = int(os.getenv("CHECK_INTERVAL_MINUTES", "2"))
+CHECK_INTERVAL_MINUTES: float = float(os.getenv("CHECK_INTERVAL_MINUTES", "2"))
 KEYWORDS: str = os.getenv("KEYWORDS", "iPhone")
 MAX_ITEMS_PER_CHECK: int = int(os.getenv("MAX_ITEMS_PER_CHECK", "30"))
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "data/listings.db")
