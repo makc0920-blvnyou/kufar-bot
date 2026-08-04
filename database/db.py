@@ -435,6 +435,22 @@ async def list_favorites(user_id: int) -> list[SavedListing]:
         return list(result.scalars().all())
 
 
+async def remove_favorite(user_id: int, listing_id: str) -> bool:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(SavedListing).where(
+                SavedListing.user_id == user_id,
+                SavedListing.listing_id == listing_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await session.delete(row)
+        await session.commit()
+        return True
+
+
 # --- Уведомления -------------------------------------------------------------
 
 async def notification_exists(user_id: int, listing_id: str) -> bool:

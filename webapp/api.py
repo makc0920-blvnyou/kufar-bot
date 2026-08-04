@@ -5,20 +5,37 @@ from typing import Any
 from aiohttp import web
 from loguru import logger
 
-from config import ACCESS_LIMITS, BOT_TOKEN, DEFAULT_ACCESS_LEVEL, MIN_PRICE_GLOBAL
+from config import ADMIN_IDS, ACCESS_LIMITS, BOT_TOKEN, DEFAULT_ACCESS_LEVEL, MIN_PRICE_GLOBAL
 from database.db import (
     DEFAULT_LIMIT_MODELS,
     add_setting,
-    clear_settings_for_user,
     count_settings_for_user,
+    find_user_by_username,
     get_settings_for_user,
     get_user,
+    grant_access,
+    list_active_users,
+    list_favorites,
+    list_hidden_models,
+    list_users,
     pause_all_for_user,
+    remove_favorite,
+    remove_hidden_model,
+    revoke_access,
+    set_access_level,
     update_setting,
 )
 from webapp.auth import extract_user, validate_init_data
 
 WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+# Глобальная ссылка на бота — проставляется из main.py после инициализации.
+BOT = None
+
+
+def set_bot(bot) -> None:
+    global BOT
+    BOT = bot
 
 
 def _limits_for(level: str) -> dict[str, int]:
@@ -92,6 +109,7 @@ async def api_init(request: web.Request) -> web.Response:
             "first_name": db_user.first_name,
             "access_level": db_user.access_level,
             "is_blocked": db_user.is_blocked,
+            "is_admin": db_user.id in ADMIN_IDS or db_user.access_level == "admin",
         },
         limits=_limits_for(db_user.access_level),
     )
@@ -290,9 +308,279 @@ async def api_stats(request: web.Request) -> web.Response:
     if db_user is None:
         return _fail("unauthorized", 401)
 
-    from database.db import count_notifications_for_user, list_hidden_models
+    from services.analytics import build_user_stats
 
-    notified = await count_notifications_for_user(db_user.id)
-    hidden = await list_hidden_models(db_user.id)
-    settings = await _serialize_settings(db_user)
-    return _ok(notified=notified, hidden=hidden, rules_count=len(settings))
+    return _ok(stats=await build_user_stats(db_user))
+
+
+# --- Избранное ---------------------------------------------------------------
+
+async def api_saved(request: web.Request) -> web.Response:
+    db_user, _ = await _require_user(request)
+    if db_user is None:
+        return _fail("unauthorized", 401)
+
+    from database.db import get_listing
+    from services.notification import _relative_time
+
+    favorites = await list_favorites(db_user.id)
+    items = []
+    for fav in favorites:
+        listing = await get_listing(fav.listing_id)
+        if listing is None:
+            continue
+        items.append(
+            {
+                "listing_id": listing.id,
+                "title": listing.title,
+                "price": listing.price,
+                "price_raw": listing.price_raw,
+                "city": listing.city,
+                "url": listing.url,
+                "model": listing.model,
+                "storage": listing.storage,
+                "images": json.loads(listing.images or "[]"),
+                "when": _relative_time(listing.found_at),
+            }
+        )
+    return _ok(saved=items)
+
+
+async def api_saved_remove(request: web.Request) -> web.Response:
+    db_user, _ = await _require_user(request)
+    if db_user is None:
+        return _fail("unauthorized", 401)
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        return _fail("bad json")
+
+    removed = await remove_favorite(db_user.id, str(body.get("listing_id") or ""))
+    return _ok(removed=removed)
+
+
+# --- Принудительная проверка --------------------------------------------------
+
+async def api_check(request: web.Request) -> web.Response:
+    db_user, _ = await _require_user(request)
+    if db_user is None:
+        return _fail("unauthorized", 401)
+
+    if BOT is None:
+        return _fail("бот не готов", 503)
+
+    from scheduler.manager import check_for_user
+
+    sent = await check_for_user(BOT, db_user.id)
+    return _ok(sent=sent)
+
+
+# --- Скрытые модели -----------------------------------------------------------
+
+async def api_hidden(request: web.Request) -> web.Response:
+    db_user, _ = await _require_user(request)
+    if db_user is None:
+        return _fail("unauthorized", 401)
+    return _ok(hidden=await list_hidden_models(db_user.id))
+
+
+async def api_hidden_remove(request: web.Request) -> web.Response:
+    db_user, _ = await _require_user(request)
+    if db_user is None:
+        return _fail("unauthorized", 401)
+
+    try:
+        body = await request.json()
+    except json.JSONDecodeError:
+        return _fail("bad json")
+
+    model = (body.get("model") or "").strip()
+    await remove_hidden_model(db_user.id, model)
+    return _ok()
+
+
+# --- Админ -------------------------------------------------------------------
+
+async def _require_admin(request: web.Request):
+    db_user, _ = await _require_user(request)
+    if db_user is None:
+        return None, "unauthorized", 401
+    if db_user.is_blocked or not db_user.is_active:
+        return None, "blocked", 403
+    is_admin = db_user.id in ADMIN_IDS or db_user.access_level == "admin"
+    if not is_admin:
+        return None, "forbidden", 403
+    return db_user, None, None
+
+
+def _level_label(level: str) -> str:
+    return {"free": "free", "premium": "💎 premium", "vip": "👑 vip", "admin": "🛠 admin"}.get(level, level)
+
+
+async def api_admin_dashboard(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+
+    from services.analytics import format_admin_dashboard
+
+    users = await list_users()
+    active = await list_active_users()
+    return _ok(
+        users_count=len(users),
+        active_count=len(active),
+        dashboard=await format_admin_dashboard(),
+        admins=ADMIN_IDS,
+    )
+
+
+async def api_admin_users(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+
+    users = await list_users()
+    result = []
+    for u in users:
+        rules = await get_settings_for_user(u.id)
+        result.append(
+            {
+                "id": u.id,
+                "username": u.username,
+                "first_name": u.first_name,
+                "access_level": u.access_level,
+                "level_label": _level_label(u.access_level),
+                "is_active": u.is_active,
+                "is_blocked": u.is_blocked,
+                "rules_count": len(rules),
+            }
+        )
+    return _ok(users=result)
+
+
+async def api_admin_user_level(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+
+    try:
+        body = await request.json()
+        target_id = int(body.get("id"))
+        level = (body.get("level") or "").strip()
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return _fail("bad request")
+
+    if level not in ("free", "premium", "vip", "admin"):
+        return _fail("уровень: free|premium|vip|admin")
+    await set_access_level(target_id, level)
+    logger.info(f"[webapp:admin] уровень {target_id} → {level}")
+    return _ok()
+
+
+async def api_admin_user_block(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+
+    try:
+        body = await request.json()
+        target_id = int(body.get("id"))
+        blocked = bool(body.get("blocked", True))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return _fail("bad request")
+
+    if blocked:
+        await revoke_access(target_id)
+    else:
+        await grant_access(target_id, access_level="free")
+    logger.info(f"[webapp:admin] {'блокировка' if blocked else 'разблокировка'} {target_id}")
+    return _ok()
+
+
+async def api_admin_user_stats(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+
+    try:
+        body = await request.json()
+        target_id = int(body.get("id"))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return _fail("bad request")
+
+    from services.analytics import build_user_stats
+
+    target = await get_user(target_id)
+    if target is None:
+        return _fail("пользователь не найден", 404)
+    return _ok(stats=await build_user_stats(target))
+
+
+async def api_admin_grant(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+
+    try:
+        body = await request.json()
+        target = (body.get("target") or "").strip()
+        level = (body.get("level") or "free").strip()
+    except json.JSONDecodeError:
+        return _fail("bad json")
+
+    if not target:
+        return _fail("укажите @username или user_id")
+    if level not in ("free", "premium", "vip"):
+        return _fail("уровень: free|premium|vip")
+
+    if target.lstrip("@").isdigit():
+        target_id = int(target.lstrip("@"))
+    else:
+        user = await find_user_by_username(target)
+        if user is None:
+            return _fail(f"пользователь {target} не найден (сначала /start)")
+        target_id = user.id
+
+    user = await grant_access(target_id, access_level=level)
+    logger.info(f"[webapp:admin] доступ {target_id} → {level}")
+
+    if BOT is not None:
+        try:
+            await BOT.send_message(
+                target_id,
+                f"🎉 Вам выдан доступ к Kufar Monitor! Уровень: {level}\n\n"
+                "Добавьте модель через /app или <code>/add_model iPhone 15 600 1200</code>",
+                parse_mode="HTML",
+            )
+        except Exception as e:
+            logger.warning(f"Не удалось уведомить {target_id}: {e}")
+
+    return _ok(id=target_id, level=level)
+
+
+async def api_admin_broadcast(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+
+    try:
+        body = await request.json()
+        text = (body.get("text") or "").strip()
+    except json.JSONDecodeError:
+        return _fail("bad json")
+
+    if not text:
+        return _fail("пустой текст")
+    if BOT is None:
+        return _fail("бот не готов", 503)
+
+    from services.notification import broadcast
+
+    users = await list_active_users()
+    ids = [u.id for u in users]
+    if not ids:
+        return _ok(sent=0, total=0)
+    sent = await broadcast(BOT, ids, text)
+    logger.info(f"[webapp:admin] рассылка: {sent}/{len(ids)}")
+    return _ok(sent=sent, total=len(ids))

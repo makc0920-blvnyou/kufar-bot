@@ -7,67 +7,178 @@
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
 :root { color-scheme: light dark; }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 body {
   margin: 0;
-  padding: 12px 14px 32px;
+  padding: 0 0 72px;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--tg-theme-bg-color, #ffffff);
   color: var(--tg-theme-text-color, #111111);
   min-height: 100vh;
+  font-size: 15px;
 }
+#header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 14px 10px;
+  background: var(--tg-theme-bg-color, #fff);
+  border-bottom: 1px solid var(--tg-theme-section-separator-color, #eee);
+}
+#header .title { font-size: 17px; font-weight: 700; }
+#header .sub { font-size: 12px; color: var(--tg-theme-hint-color, #888); margin-top: 2px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge.free { background: #9e9e9e22; color: var(--tg-theme-hint-color, #888); }
+.badge.premium { background: #2196f322; color: #2196f3; }
+.badge.vip { background: #ff980022; color: #ff9800; }
+.badge.admin { background: #e91e6322; color: #e91e63; }
+.badge.on { background: #2fb46322; color: #2fb463; }
+.badge.off { background: #e5393522; color: #e53935; }
+.icon-btn {
+  border: none; background: var(--tg-theme-secondary-bg-color, #eee);
+  color: var(--tg-theme-text-color, #111);
+  width: 40px; height: 40px; border-radius: 12px;
+  font-size: 18px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+
+#tabs {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+  display: flex;
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-top: 1px solid var(--tg-theme-section-separator-color, #eee);
+}
+#tabs .tab {
+  flex: 1; border: none; background: none; color: var(--tg-theme-hint-color, #888);
+  padding: 10px 0 8px; font-size: 11px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+#tabs .tab .ico { font-size: 20px; line-height: 1; }
+#tabs .tab.active { color: var(--tg-theme-button-color, #2481cc); font-weight: 600; }
+
+.screen { display: none; padding: 12px 14px; }
+.screen.active { display: block; }
+
+.section-title { font-size: 13px; font-weight: 600; color: var(--tg-theme-hint-color, #888); margin: 18px 0 8px; text-transform: uppercase; letter-spacing: .4px; }
+
 .card {
   background: var(--tg-theme-secondary-bg-color, #f0f0f0);
   border-radius: 14px;
   padding: 12px 14px;
   margin-bottom: 10px;
 }
-.card h3 { margin: 0 0 6px; font-size: 15px; }
-.card .row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; font-size: 13px; color: var(--tg-theme-hint-color, #888); }
-.card .row b { color: var(--tg-theme-text-color, #111); }
-.badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; }
-.badge.on { background: #2fb46322; color: #2fb463; }
-.badge.off { background: #e5393522; color: #e53935; }
+.card h3 { margin: 0 0 6px; font-size: 15px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.card h3 .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; font-size: 13px; color: var(--tg-theme-hint-color, #888); }
+.row b { color: var(--tg-theme-text-color, #111); font-weight: 600; }
+.actions { display: flex; gap: 8px; margin-top: 8px; }
 .btn {
-  display: inline-block; border: none; border-radius: 12px;
-  padding: 10px 14px; margin: 4px 4px 4px 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: none; border-radius: 12px;
+  padding: 12px 14px; min-height: 44px;
   background: var(--tg-theme-button-color, #2481cc);
   color: var(--tg-theme-button-text-color, #ffffff);
-  font-size: 13px; font-weight: 600; cursor: pointer;
+  font-size: 14px; font-weight: 600; cursor: pointer; flex: 1;
 }
 .btn.ghost { background: var(--tg-theme-secondary-bg-color, #eee); color: var(--tg-theme-text-color, #111); }
 .btn.danger { background: #e5393533; color: #e53935; }
-.btn.block { display: block; width: 100%; margin: 6px 0; }
-#header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-#header .title { font-size: 18px; font-weight: 700; }
-#userinfo { font-size: 12px; color: var(--tg-theme-hint-color, #888); }
+.btn.small { flex: none; padding: 8px 12px; min-height: 38px; font-size: 13px; }
+.btn.block { width: 100%; flex: none; }
+.btn:disabled { opacity: .5; }
+
+.switch {
+  position: relative; width: 48px; height: 28px; border-radius: 20px;
+  background: var(--tg-theme-hint-color, #bbb); cursor: pointer; border: none;
+  transition: background .15s; flex: none;
+}
+.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 22px; height: 22px; border-radius: 50%; background: #fff;
+  transition: left .15s;
+}
+.switch.on { background: var(--tg-theme-button-color, #2481cc); }
+.switch.on::after { left: 23px; }
+
 #toast {
-  position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%);
   background: var(--tg-theme-hint-color, #555); color: var(--tg-theme-bg-color, #fff);
-  padding: 8px 16px; border-radius: 20px; font-size: 13px;
-  opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 50;
+  padding: 10px 18px; border-radius: 22px; font-size: 14px; max-width: 85vw;
+  opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 60; text-align: center;
 }
 #toast.show { opacity: 1; }
-#modal {
-  position: fixed; inset: 0; background: rgba(0,0,0,.5);
-  display: none; align-items: flex-end; z-index: 40;
+
+#sheet {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50;
+  display: none; align-items: flex-end;
 }
-#modal.open { display: flex; }
-#modal .sheet {
-  background: var(--tg-theme-bg-color, #fff); width: 100%;
-  border-radius: 18px 18px 0 0; padding: 16px 16px 24px;
+#sheet.open { display: flex; }
+#sheet .sheet-body {
+  background: var(--tg-theme-bg-color, #fff);
+  width: 100%; border-radius: 18px 18px 0 0;
+  padding: 14px 16px calc(env(safe-area-inset-bottom, 0px) + 20px);
   max-height: 88vh; overflow-y: auto;
 }
-label { display: block; font-size: 12px; color: var(--tg-theme-hint-color, #888); margin: 10px 0 4px; }
-input, select {
-  width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #9994;
+#sheet .sheet-title { font-size: 17px; font-weight: 700; margin: 0 0 4px; }
+#sheet .sheet-sub { font-size: 12px; color: var(--tg-theme-hint-color, #888); margin-bottom: 8px; }
+
+label { display: block; font-size: 12px; color: var(--tg-theme-hint-color, #888); margin: 12px 0 4px; }
+input, select, textarea {
+  width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--tg-theme-section-separator-color, #eee);
   background: var(--tg-theme-secondary-bg-color, #f0f0f0);
-  color: var(--tg-theme-text-color, #111); font-size: 15px;
+  color: var(--tg-theme-text-color, #111); font-size: 16px;
 }
+textarea { min-height: 90px; resize: vertical; }
 .inline { display: flex; gap: 8px; }
 .inline > div { flex: 1; }
-.empty { text-align: center; color: var(--tg-theme-hint-color, #888); padding: 30px 0; font-size: 14px; }
-.center { text-align: center; }
+
+.empty { text-align: center; color: var(--tg-theme-hint-color, #888); padding: 40px 10px; font-size: 14px; }
+.spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.stat-box {
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  border-radius: 14px; padding: 12px 14px; text-align: center;
+}
+.stat-box .num { font-size: 22px; font-weight: 700; }
+.stat-box .lbl { font-size: 11px; color: var(--tg-theme-hint-color, #888); margin-top: 2px; }
+
+.bar-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; color: var(--tg-theme-hint-color, #888); }
+.bar-row .bar {
+  flex: 1; height: 14px; background: var(--tg-theme-secondary-bg-color, #eee);
+  border-radius: 7px; overflow: hidden;
+}
+.bar-row .bar i {
+  display: block; height: 100%; background: var(--tg-theme-button-color, #2481cc);
+  border-radius: 7px; transition: width .3s;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--tg-theme-secondary-bg-color, #eee);
+  border-radius: 20px; padding: 8px 12px; font-size: 13px; margin: 0 8px 8px 0;
+}
+.chip button { border: none; background: none; color: #e53935; font-size: 14px; cursor: pointer; padding: 0 0 0 4px; }
+
+.saved-item { display: flex; gap: 12px; align-items: center; }
+.saved-item img { width: 64px; height: 64px; border-radius: 12px; object-fit: cover; background: #3331; }
+.saved-item .info { flex: 1; min-width: 0; }
+.saved-item .t { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.saved-item .m { font-size: 12px; color: var(--tg-theme-hint-color, #888); margin-top: 2px; }
+
+.user-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.user-row .u-name { font-weight: 600; font-size: 14px; }
+.user-row .u-meta { font-size: 12px; color: var(--tg-theme-hint-color, #888); margin-top: 2px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.dot.on { background: #2fb463; }
+.dot.off { background: #e53935; }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg button {
+  flex: 1; border: 1px solid var(--tg-theme-section-separator-color, #eee);
+  background: var(--tg-theme-secondary-bg-color, #eee); color: var(--tg-theme-text-color, #111);
+  border-radius: 10px; padding: 10px; font-size: 13px; cursor: pointer; font-weight: 600;
+}
+.seg button.sel { background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff); border-color: transparent; }
+.search { margin-bottom: 10px; }
 </style>
 </head>
 <body>
@@ -75,31 +186,52 @@ input, select {
 <div id="header">
   <div>
     <div class="title">⚙️ Kufar Monitor</div>
-    <div id="userinfo">Загрузка...</div>
+    <div class="sub" id="userinfo">Загрузка...</div>
   </div>
+  <button class="icon-btn" id="btn-refresh" title="Обновить">🔄</button>
 </div>
 
-<div id="actions"></div>
-<div id="rules"></div>
-<div id="empty" class="empty" style="display:none">Правил пока нет.<br>Добавьте первую модель 👇</div>
+<div id="screen-models" class="screen active"></div>
+<div id="screen-saved" class="screen"></div>
+<div id="screen-stats" class="screen"></div>
+<div id="screen-admin" class="screen"></div>
+
+<nav id="tabs">
+  <button class="tab active" data-tab="models"><span class="ico">📱</span>Модели</button>
+  <button class="tab" data-tab="saved"><span class="ico">⭐</span>Избранное</button>
+  <button class="tab" data-tab="stats"><span class="ico">📊</span>Статистика</button>
+  <button class="tab" data-tab="admin" id="tab-admin" style="display:none"><span class="ico">🛠</span>Админ</button>
+</nav>
 
 <div id="toast"></div>
 
-<div id="modal">
-  <div class="sheet">
-    <h2 id="modal-title" style="margin-top:0">Добавить модель</h2>
-    <div id="modal-body"></div>
-    <div class="center" style="margin-top:14px">
-      <button class="btn block" id="modal-save">💾 Сохранить</button>
-      <button class="btn ghost block" id="modal-cancel">Отмена</button>
-    </div>
+<div id="sheet">
+  <div class="sheet-body">
+    <div class="sheet-title" id="sheet-title"></div>
+    <div class="sheet-sub" id="sheet-sub"></div>
+    <div id="sheet-content"></div>
+    <div id="sheet-actions"></div>
   </div>
 </div>
 
 <script>
 const Telegram = window.Telegram;
-let S = { user:null, limits:{max_models:999,min_interval:300}, settings:[], models:[], minPriceGlobal:95 };
+let S = { user:null, limits:{max_models:999,min_interval:300}, settings:[], models:[], minPriceGlobal:95, saved:[], stats:null, adminUsers:[], adminDash:null };
+let tab = 'models';
+let adminQuery = '';
 
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmt(v) {
+  if (v === null || v === undefined) return '—';
+  return Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' BYN';
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200);
+}
 async function api(path, method='GET', body=null) {
   const opts = { method, headers: { 'X-Telegram-Init-Data': Telegram.WebApp.initData } };
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
@@ -108,177 +240,452 @@ async function api(path, method='GET', body=null) {
   if (!data.ok) throw new Error(data.error || 'Ошибка');
   return data;
 }
-
-function toast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2000);
+function openSheet(title, content, actionsHtml='', sub='') {
+  document.getElementById('sheet-title').textContent = title;
+  document.getElementById('sheet-sub').textContent = sub;
+  document.getElementById('sheet-content').innerHTML = content;
+  document.getElementById('sheet-actions').innerHTML = actionsHtml;
+  document.getElementById('sheet').classList.add('open');
 }
-
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function closeSheet() {
+  document.getElementById('sheet').classList.remove('open');
 }
-
-function fmtPrice(v) {
-  if (v === null || v === undefined) return '—';
-  return Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' BYN';
-}
-
-function render() {
-  const actions = document.getElementById('actions');
-  const rules = document.getElementById('rules');
-  const empty = document.getElementById('empty');
-
-  document.getElementById('userinfo').textContent =
-    `${S.user ? S.user.first_name || S.user.username || S.user.id : ''} · ${S.user ? S.user.access_level : ''} · лимит моделей ${S.limits.max_models}`;
-
-  actions.innerHTML = `
-    <button class="btn block" id="btn-add">➕ Добавить модель</button>
-    <button class="btn ghost block" id="btn-pause">⏸️ Пауза всех</button>
-    <button class="btn ghost block" id="btn-resume">▶️ Возобновить все</button>
-  `;
-
-  if (!S.settings.length) {
-    empty.style.display = 'block';
-    rules.innerHTML = '';
-  } else {
-    empty.style.display = 'none';
-    rules.innerHTML = S.settings.map(s => `
-      <div class="card">
-        <h3>${s.is_active ? '🟢' : '🔴'} ${escapeHtml(s.model)}</h3>
-        <div class="row"><span>Цена</span><b>${fmtPrice(s.min_price)} – ${fmtPrice(s.max_price)}</b></div>
-        <div class="row"><span>Города</span><b>${escapeHtml(s.cities)}</b></div>
-        <div class="row"><span>Интервал</span><b>${s.check_interval} сек</b></div>
-        <div class="row">
-          <span>Фото</span>
-          <button class="btn ghost" data-act="photo" data-id="${s.id}">${s.send_photos ? '✅' : '❌'}</button>
-        </div>
-        <div class="row">
-          <span>Описание</span>
-          <button class="btn ghost" data-act="desc" data-id="${s.id}">${s.show_description ? '✅' : '❌'}</button>
-        </div>
-        <div style="margin-top:6px">
-          <button class="btn ghost" data-act="edit" data-id="${s.id}">✏️ Изменить</button>
-          <button class="btn ${s.is_active ? 'ghost' : ''}" data-act="toggle" data-id="${s.id}">${s.is_active ? '⏸️ Пауза' : '▶️ Пуск'}</button>
-          <button class="btn danger" data-act="del" data-id="${s.id}">🗑</button>
-        </div>
-      </div>`).join('');
-  }
-
-  document.getElementById('btn-add').onclick = openAdd;
-  document.getElementById('btn-pause').onclick = () => api('/api/settings/pause_all','POST',{}).then(() => { toast('Все на паузе'); load(); });
-  document.getElementById('btn-resume').onclick = () => api('/api/settings/resume_all','POST',{}).then(() => { toast('Все активны'); load(); });
-  rules.querySelectorAll('[data-act]').forEach(b => {
-    b.onclick = () => {
-      const s = S.settings.find(x => x.id === Number(b.dataset.id));
-      if (!s) return;
-      if (b.dataset.act === 'edit') openEdit(s);
-      else if (b.dataset.act === 'del') { if (confirm('Удалить правило ' + s.model + '?')) api('/api/settings/delete','POST',{id:s.id}).then(load).catch(e=>toast(e.message)); }
-      else if (b.dataset.act === 'toggle') api('/api/settings/toggle','POST',{id:s.id}).then(load).catch(e=>toast(e.message));
-      else if (b.dataset.act === 'photo') api('/api/settings/update','POST',{id:s.id, send_photos:!s.send_photos}).then(load).catch(e=>toast(e.message));
-      else if (b.dataset.act === 'desc') api('/api/settings/update','POST',{id:s.id, show_description:!s.show_description}).then(load).catch(e=>toast(e.message));
-    };
-  });
-}
+document.getElementById('sheet').addEventListener('click', e => {
+  if (e.target === document.getElementById('sheet')) closeSheet();
+});
 
 function intervalOptions(selected) {
   const presets = [[15,'15 сек'],[60,'1 мин'],[300,'5 мин'],[1800,'30 мин'],[3600,'1 час'],[86400,'24 часа']];
   const min = S.limits.min_interval;
-  return presets
-    .filter(p => p[0] >= min)
+  return presets.filter(p => p[0] >= min)
     .map(p => `<option value="${p[0]}" ${p[0]===selected?'selected':''}>${p[1]}</option>`).join('')
     + `<option value="custom" ${!presets.some(p=>p[0]===selected)?'selected':''}>Свой…</option>`;
 }
 
+/* ============================ МОДЕЛИ ============================ */
+
+function renderModels() {
+  const el = document.getElementById('screen-models');
+  const pauseBtn = S.settings.some(s => s.is_active)
+    ? '<button class="btn ghost" id="m-pause">⏸️ Пауза всех</button>'
+    : '<button class="btn" id="m-resume">▶️ Пуск всех</button>';
+  let html = `
+    <div class="actions" style="margin:0 0 12px">
+      <button class="btn" id="m-add">➕ Модель</button>
+      ${pauseBtn}
+    </div>`;
+  if (!S.settings.length) {
+    html += '<div class="empty">Правил пока нет.<br>Нажмите «➕ Модель» 👇</div>';
+  } else {
+    html += S.settings.map(s => `
+      <div class="card">
+        <h3>
+          <span class="name">${s.is_active ? '🟢' : '🔴'} ${esc(s.model)}</span>
+          <span class="badge ${s.is_active ? 'on' : 'off'}">${s.is_active ? 'АКТИВНО' : 'ПАУЗА'}</span>
+        </h3>
+        <div class="row"><span>💰 Цена</span><b>${fmt(s.min_price)} – ${fmt(s.max_price)}</b></div>
+        <div class="row"><span>📍 Города</span><b>${esc(s.cities)}</b></div>
+        <div class="row"><span>⏱ Интервал</span><b>${s.check_interval} сек</b></div>
+        <div class="row">
+          <span>🖼 Фото</span>
+          <button class="switch ${s.send_photos?'on':''}" data-act="photo" data-id="${s.id}" aria-label="Фото"></button>
+        </div>
+        <div class="row">
+          <span>📄 Описание</span>
+          <button class="switch ${s.show_description?'on':''}" data-act="desc" data-id="${s.id}" aria-label="Описание"></button>
+        </div>
+        <div class="actions">
+          <button class="btn ghost" data-act="edit" data-id="${s.id}">✏️ Изменить</button>
+          <button class="btn ghost" data-act="toggle" data-id="${s.id}">${s.is_active?'⏸️':'▶️'}</button>
+          <button class="btn danger" data-act="del" data-id="${s.id}">🗑</button>
+        </div>
+      </div>`).join('');
+  }
+  el.innerHTML = html;
+
+  document.getElementById('m-add').onclick = openAdd;
+  const p = document.getElementById('m-pause');
+  if (p) p.onclick = () => api('/api/settings/pause_all','POST',{}).then(() => { toast('⏸️ Все на паузе'); load(); });
+  const r = document.getElementById('m-resume');
+  if (r) r.onclick = () => api('/api/settings/resume_all','POST',{}).then(() => { toast('▶️ Все активны'); load(); });
+  el.querySelectorAll('[data-act]').forEach(b => {
+    b.onclick = () => {
+      const s = S.settings.find(x => x.id === Number(b.dataset.id));
+      if (!s) return;
+      const a = b.dataset.act;
+      if (a === 'edit') openEdit(s);
+      else if (a === 'del') { if (confirm('Удалить правило «' + s.model + '»?')) api('/api/settings/delete','POST',{id:s.id}).then(load).catch(e=>toast(e.message)); }
+      else if (a === 'toggle') api('/api/settings/toggle','POST',{id:s.id}).then(load).catch(e=>toast(e.message));
+      else if (a === 'photo') api('/api/settings/update','POST',{id:s.id, send_photos:!s.send_photos}).then(load).catch(e=>toast(e.message));
+      else if (a === 'desc') api('/api/settings/update','POST',{id:s.id, show_description:!s.show_description}).then(load).catch(e=>toast(e.message));
+    };
+  });
+}
+
 function modalForm(mode, s) {
-  const body = document.getElementById('modal-body');
-  body.innerHTML = `
+  return `
     ${mode==='add' ? `
       <label>Модель</label>
       <select id="f-model">
-        ${S.models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
+        ${S.models.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
       </select>` : `
       <label>Модель</label>
-      <input id="f-model" value="${escapeHtml(s.model)}" disabled>`}
+      <input id="f-model" value="${esc(s.model)}" disabled>`}
     <div class="inline">
       <div><label>Мин. цена (BYN)</label><input id="f-min" inputmode="decimal" value="${s.min_price ?? S.minPriceGlobal}"></div>
       <div><label>Макс. цена</label><input id="f-max" inputmode="decimal" value="${s.max_price ?? ''}" placeholder="без лимита"></div>
     </div>
     <label>Города (через запятую)</label>
-    <input id="f-cities" value="${escapeHtml(s.cities || 'Минск')}">
+    <input id="f-cities" value="${esc(s.cities || 'Минск')}">
     <label>Интервал проверки</label>
     <select id="f-interval">${intervalOptions(s.check_interval)}</select>
-    <div id="custom-wrap" style="display:none"><label>Свой интервал (секунды)</label><input id="f-interval-custom" inputmode="numeric" placeholder=">= ${S.limits.min_interval}"></div>
+    <div id="custom-wrap" style="display:none"><label>Свой интервал (сек), мин ${S.limits.min_interval}</label><input id="f-interval-custom" inputmode="numeric" placeholder="${S.limits.min_interval}"></div>
   `;
-  document.getElementById('f-interval').onchange = e => {
-    document.getElementById('custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
-  };
-}
-
-function openModal(title) {
-  document.getElementById('modal-title').textContent = title;
-  document.getElementById('modal').classList.add('open');
-}
-
-function closeModal() {
-  document.getElementById('modal').classList.remove('open');
 }
 
 function openAdd() {
-  if (S.settings.length >= S.limits.max_models) { toast(`Лимит: ${S.limits.max_models} моделей`); return; }
-  modalForm('add', { min_price: S.minPriceGlobal, max_price: null, cities: 'Минск', check_interval: S.limits.min_interval });
-  openModal('➕ Добавить модель');
-  document.getElementById('modal-save').onclick = async () => {
+  if (S.settings.length >= S.limits.max_models) { toast('Лимит моделей: ' + S.limits.max_models); return; }
+  openSheet('➕ Добавить модель',
+    modalForm('add', { min_price: S.minPriceGlobal, max_price: null, cities: 'Минск', check_interval: S.limits.min_interval }),
+    '<button class="btn block" id="s-save">💾 Сохранить</button>');
+  document.getElementById('s-save').onclick = async () => {
+    const intSel = document.getElementById('f-interval').value;
     try {
-      const interval = document.getElementById('f-interval').value;
-      const check_interval = interval === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(interval);
       const body = {
         model: document.getElementById('f-model').value,
         min_price: document.getElementById('f-min').value,
         max_price: document.getElementById('f-max').value || null,
         cities: document.getElementById('f-cities').value,
-        check_interval
+        check_interval: intSel === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(intSel)
       };
       await api('/api/settings/add','POST',body);
-      toast('✅ Добавлено');
-      closeModal(); load();
+      toast('✅ Добавлено'); closeSheet(); load();
     } catch (e) { toast('❌ ' + e.message); }
   };
-  document.getElementById('modal-cancel').onclick = closeModal;
+  document.getElementById('f-interval').onchange = e => {
+    document.getElementById('custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
+  };
 }
 
 function openEdit(s) {
-  modalForm('edit', s);
-  openModal('✏️ ' + s.model);
-  document.getElementById('modal-save').onclick = async () => {
+  openSheet('✏️ ' + s.model,
+    modalForm('edit', s),
+    '<button class="btn block" id="s-save">💾 Сохранить</button>');
+  document.getElementById('s-save').onclick = async () => {
+    const intSel = document.getElementById('f-interval').value;
     try {
-      const interval = document.getElementById('f-interval').value;
       const body = { id: s.id,
         min_price: document.getElementById('f-min').value,
         max_price: document.getElementById('f-max').value || null,
         cities: document.getElementById('f-cities').value,
-        check_interval: interval === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(interval)
+        check_interval: intSel === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(intSel)
       };
       await api('/api/settings/update','POST',body);
-      toast('✅ Сохранено');
-      closeModal(); load();
+      toast('✅ Сохранено'); closeSheet(); load();
     } catch (e) { toast('❌ ' + e.message); }
   };
-  document.getElementById('modal-cancel').onclick = closeModal;
+  document.getElementById('f-interval').onchange = e => {
+    document.getElementById('custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
+  };
 }
+
+/* ============================ ИЗБРАННОЕ ============================ */
+
+function renderSaved() {
+  const el = document.getElementById('screen-saved');
+  if (!S.saved.length) {
+    el.innerHTML = '<div class="empty">⭐ Избранное пусто.<br>Жмите «В избранное» под объявлением в боте.</div>';
+    return;
+  }
+  el.innerHTML = S.saved.map(f => `
+    <div class="card">
+      <div class="saved-item">
+        ${f.images.length ? `<img src="${esc(f.images[0])}" alt="" onerror="this.style.display='none'">` : '<div style="width:64px;height:64px;border-radius:12px;background:var(--tg-theme-bg-color,#eee);display:flex;align-items:center;justify-content:center;font-size:22px">📱</div>'}
+        <div class="info">
+          <div class="t">${esc(f.title)}</div>
+          <div class="m">${esc(f.city)} · ${f.when || ''}</div>
+          <div class="m" style="color:var(--tg-theme-button-color,#2481cc);font-weight:600">${fmt(f.price_raw)}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          <a class="btn small" href="${esc(f.url)}" target="_blank">Открыть</a>
+          <button class="btn small danger" data-del="${esc(f.listing_id)}">🗑</button>
+        </div>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = () => api('/api/saved/remove','POST',{listing_id:b.dataset.del}).then(loadSaved).catch(e=>toast(e.message));
+  });
+}
+
+/* ============================ СТАТИСТИКА ============================ */
+
+function renderStats() {
+  const el = document.getElementById('screen-stats');
+  const st = S.stats;
+  if (!st) { el.innerHTML = '<div class="empty">Нет данных</div>'; return; }
+  const active = st.active_count, total = st.models_count, notified = st.notified, hidden = st.hidden.length;
+  let html = `
+    <div class="stat-grid">
+      <div class="stat-box"><div class="num">${active}/${total}</div><div class="lbl">Моделей активных</div></div>
+      <div class="stat-box"><div class="num">${notified}</div><div class="lbl">Уведомлений</div></div>
+    </div>
+    <button class="btn block" id="st-check" style="margin-top:12px">🔍 Проверить сейчас</button>
+    <div class="section-title">📈 Рынок за 12ч</div>`;
+  if (!st.models.length) {
+    html += '<div class="empty">Добавьте модель, чтобы видеть медиану цен</div>';
+  } else {
+    html += st.models.map(m => `
+      <div class="card">
+        <h3><span class="name">${m.is_active ? '🟢' : '🔴'} ${esc(m.model)}</span></h3>
+        <div class="row"><span>Медиана</span><b>${m.market_count ? fmt(m.median) : 'нет данных'}</b></div>
+        <div class="row"><span>Q1 (25%)</span><b>${m.market_count ? fmt(m.q1) : '—'}</b></div>
+        <div class="row"><span>Макс</span><b>${m.market_count ? fmt(m.market_max) : '—'}</b></div>
+        <div class="row"><span>Объявлений</span><b>${m.market_count}</b></div>
+      </div>`).join('');
+  }
+  html += '<div class="section-title">📅 За неделю</div>';
+  if (!st.week.length) {
+    html += '<div class="empty">За неделю уведомлений не было</div>';
+  } else {
+    const max = Math.max(...st.week.map(d => d.count), 1);
+    html += st.week.map(d => `
+      <div class="bar-row"><span style="width:44px">${esc(d.day)}</span>
+        <div class="bar"><i style="width:${Math.round(d.count/max*100)}%"></i></div>
+        <b style="width:20px;text-align:right">${d.count}</b>
+      </div>`).join('');
+  }
+  html += '<div class="section-title">🙈 Скрытые модели</div>';
+  if (!hidden) {
+    html += '<div class="empty">Скрытых моделей нет</div>';
+  } else {
+    html += `<div style="margin-top:4px">${st.hidden.map(m =>
+      `<span class="chip">${esc(m)} <button data-unhide="${esc(m)}">✕</button></span>`).join('')}</div>`;
+  }
+  el.innerHTML = html;
+
+  document.getElementById('st-check').onclick = async e => {
+    const btn = e.target;
+    const old = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Ищу новые…';
+    try {
+      const r = await api('/api/check','POST',{});
+      toast(r.sent ? `✅ Найдено новых: ${r.sent}` : '🤷 Новых предложений нет');
+      loadStats();
+    } catch (err) { toast('❌ ' + err.message); }
+    btn.disabled = false; btn.innerHTML = old;
+  };
+  el.querySelectorAll('[data-unhide]').forEach(b => {
+    b.onclick = () => api('/api/hidden/remove','POST',{model:b.dataset.unhide}).then(() => { toast('🙈 Снято'); loadStats(); }).catch(e=>toast(e.message));
+  });
+}
+
+/* ============================ АДМИН ============================ */
+
+function renderAdmin() {
+  const el = document.getElementById('screen-admin');
+  const d = S.adminDash;
+  let html = '<div class="actions" style="margin:0 0 12px">' +
+    '<button class="btn" id="a-grant">➕ Доступ</button>' +
+    '<button class="btn ghost" id="a-broadcast">📣 Рассылка</button></div>';
+  if (d) {
+    html += `
+      <div class="stat-grid" style="margin-bottom:6px">
+        <div class="stat-box"><div class="num">${d.users_count}</div><div class="lbl">Всего юзеров</div></div>
+        <div class="stat-box"><div class="num">${d.active_count}</div><div class="lbl">Активных</div></div>
+      </div>
+      <div class="section-title">👥 Пользователи (${S.adminUsers.length})</div>
+      <input class="search" id="a-search" placeholder="🔎 Поиск по имени, @username, ID…" value="${esc(adminQuery)}">
+      ${S.adminUsers.map(u => `
+        <div class="card">
+          <div class="user-row">
+            <span class="dot ${(u.is_active && !u.is_blocked) ? 'on' : 'off'}"></span>
+            <div style="flex:1;min-width:0">
+              <div class="u-name">${esc(u.username || u.first_name || u.id)}</div>
+              <div class="u-meta">ID: ${u.id} · ${esc(u.level_label)} · правил: ${u.rules_count}</div>
+            </div>
+            <button class="btn small ghost" data-au="${u.id}">🛠</button>
+          </div>
+        </div>`).join('')}
+      ${S.adminUsers.length ? '' : '<div class="empty">Никого не найдено</div>'}`;
+  } else {
+    html += '<div class="empty">Загрузка...</div>';
+  }
+  el.innerHTML = html;
+
+  document.getElementById('a-grant').onclick = openGrant;
+  document.getElementById('a-broadcast').onclick = openBroadcast;
+  const q = document.getElementById('a-search');
+  if (q) q.oninput = e => { adminQuery = e.target.value; filterAdmin(); };
+  el.querySelectorAll('[data-au]').forEach(b => {
+    b.onclick = () => openUser(b.dataset.au);
+  });
+}
+
+function filterAdmin() {
+  const q = adminQuery.trim().toLowerCase();
+  const users = S.adminUsers.filter(u =>
+    !q || String(u.username||'').toLowerCase().includes(q)
+      || String(u.first_name||'').toLowerCase().includes(q)
+      || String(u.id).includes(q)
+  );
+  S.adminUsers = users;
+  renderAdmin();
+  // восстановим поиск (renderAdmin рисует заново)
+}
+
+function openGrant() {
+  openSheet('➕ Выдать доступ',
+    `
+    <label>@username или user_id клиента</label>
+    <input id="g-target" placeholder="@username или 123456789">
+    <label>Уровень</label>
+    <div class="seg" id="g-levels">
+      <button data-lv="free">free</button>
+      <button data-lv="premium">💎 premium</button>
+      <button data-lv="vip">👑 vip</button>
+    </div>`,
+    '<button class="btn block" id="s-save">✅ Выдать</button>');
+  let level = 'free';
+  document.querySelectorAll('#g-levels button').forEach(b => {
+    b.classList.toggle('sel', b.dataset.lv === level);
+    b.onclick = () => { level = b.dataset.lv; document.querySelectorAll('#g-levels button').forEach(x => x.classList.toggle('sel', x === b)); };
+  });
+  document.getElementById('s-save').onclick = async () => {
+    try {
+      const r = await api('/api/admin/grant','POST',{ target: document.getElementById('g-target').value, level });
+      toast('✅ Доступ: ' + r.level); closeSheet(); loadAdmin();
+    } catch (e) { toast('❌ ' + e.message); }
+  };
+}
+
+function openBroadcast() {
+  openSheet('📣 Рассылка',
+    '<label>Текст всем активным пользователям</label><textarea id="b-text" placeholder="Текст рассылки…"></textarea>',
+    '<button class="btn block" id="s-save">📤 Отправить</button>',
+    'HTML-формат поддерживается');
+  document.getElementById('s-save').onclick = async () => {
+    const text = document.getElementById('b-text').value;
+    if (!text.trim()) { toast('Введите текст'); return; }
+    if (!confirm('Отправить всем активным?')) return;
+    try {
+      const r = await api('/api/admin/broadcast','POST',{ text });
+      toast(`📣 Отправлено ${r.sent} из ${r.total}`); closeSheet();
+    } catch (e) { toast('❌ ' + e.message); }
+  };
+}
+
+function openUser(uid) {
+  S._lastUid = uid;
+  const u = S.adminUsers.find(x => String(x.id) === String(uid));
+  if (!u) return;
+  const blocked = u.is_blocked;
+  openSheet(esc(u.username || u.first_name || u.id),
+    `
+    <div class="row"><span>ID</span><b>${u.id}</b></div>
+    <div class="row"><span>Статус</span><b>${blocked ? '🚫 заблокирован' : (u.is_active ? '🟢 активен' : '🔴 неактивен')}</b></div>
+    <div class="row"><span>Правил</span><b>${u.rules_count}</b></div>
+    <label>Уровень</label>
+    <div class="seg" id="u-levels">
+      <button data-lv="free" ${u.access_level==='free'?'class="sel"':''}>free</button>
+      <button data-lv="premium" ${u.access_level==='premium'?'class="sel"':''}>💎 premium</button>
+      <button data-lv="vip" ${u.access_level==='vip'?'class="sel"':''}>👑 vip</button>
+    </div>`,
+    `<div class="actions">
+      <button class="btn ghost" id="u-stats">📊 Статистика</button>
+      <button class="btn ${blocked ? '' : 'danger'}" id="u-block">${blocked ? '✅ Разблокировать' : '🚫 Заблокировать'}</button>
+    </div>`);
+  document.querySelectorAll('#u-levels button').forEach(b => {
+    b.onclick = async () => {
+      try { await api('/api/admin/user/level','POST',{ id: Number(uid), level: b.dataset.lv }); toast('✅ Уровень: ' + b.dataset.lv); loadAdmin(); }
+      catch (e) { toast('❌ ' + e.message); }
+    };
+  });
+  document.getElementById('u-stats').onclick = async () => {
+    try {
+      const r = await api('/api/admin/user/stats','POST',{ id: Number(uid) });
+      showUserStats(r.stats);
+    } catch (e) { toast('❌ ' + e.message); }
+  };
+  document.getElementById('u-block').onclick = async () => {
+    if (!blocked && !confirm('Заблокировать ' + uid + '?')) return;
+    try { await api('/api/admin/user/block','POST',{ id: Number(uid), blocked: !blocked }); toast(blocked ? '✅ Разблокирован' : '🚫 Заблокирован'); loadAdmin(); closeSheet(); }
+    catch (e) { toast('❌ ' + e.message); }
+  };
+}
+
+function showUserStats(st) {
+  let html = `
+    <div class="stat-grid" style="margin-bottom:8px">
+      <div class="stat-box"><div class="num">${st.active_count}/${st.models_count}</div><div class="lbl">Моделей</div></div>
+      <div class="stat-box"><div class="num">${st.notified}</div><div class="lbl">Уведомлений</div></div>
+    </div>`;
+  st.models.forEach(m => {
+    html += `<div class="card">
+      <h3><span class="name">${m.is_active ? '🟢' : '🔴'} ${esc(m.model)}</span></h3>
+      <div class="row"><span>Медиана</span><b>${m.market_count ? fmt(m.median) : 'нет данных'}</b></div>
+      <div class="row"><span>Объявлений</span><b>${m.market_count}</b></div>
+    </div>`;
+  });
+  if (st.hidden.length) html += `<div class="section-title">🙈 Скрытые: ${st.hidden.map(esc).join(', ')}</div>`;
+  openSheet('📊 Статистика', html, '<button class="btn ghost block" id="s-back">◀️ К пользователю</button>');
+  document.getElementById('s-back').onclick = () => openUser(String(S._lastUid));
+}
+
+/* ============================ ЗАГРУЗКА ============================ */
 
 async function load() {
   try {
     const [init, data] = await Promise.all([api('/api/init'), api('/api/settings')]);
     S.user = init.user; S.limits = init.limits;
     S.settings = data.settings; S.models = data.models; S.minPriceGlobal = data.min_price_global;
-    render();
+    document.getElementById('userinfo').textContent =
+      (S.user.first_name || S.user.username || S.user.id) + ' · ' + S.user.access_level + ' · ' + S.limits.max_models + ' моделей';
+    const adm = document.getElementById('tab-admin');
+    adm.style.display = S.user.is_admin ? '' : 'none';
+    if (tab === 'admin') { await loadAdmin(); } else { renderModels(); }
+    if (tab === 'saved') await loadSaved();
+    if (tab === 'stats') await loadStats();
   } catch (e) {
     document.getElementById('userinfo').textContent = '❌ ' + e.message;
-    document.getElementById('rules').innerHTML = '<div class="empty">Ошибка авторизации.<br>Откройте через кнопку бота в Telegram.</div>';
+    document.getElementById('screen-models').innerHTML = '<div class="empty">Ошибка авторизации.<br>Откройте через кнопку бота в Telegram.</div>';
   }
 }
+
+async function loadSaved() {
+  try { const r = await api('/api/saved'); S.saved = r.saved; renderSaved(); }
+  catch (e) { toast('❌ ' + e.message); }
+}
+async function loadStats() {
+  try { const r = await api('/api/stats'); S.stats = r.stats; renderStats(); }
+  catch (e) { toast('❌ ' + e.message); }
+}
+async function loadAdmin() {
+  try {
+    const [d, u] = await Promise.all([api('/api/admin/dashboard'), api('/api/admin/users')]);
+    S.adminDash = d; S.adminUsers = u.users;
+    if (adminQuery) filterAdmin(); else renderAdmin();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+document.querySelectorAll('#tabs .tab').forEach(t => {
+  t.onclick = async () => {
+    tab = t.dataset.tab;
+    document.querySelectorAll('#tabs .tab').forEach(x => x.classList.toggle('active', x === t));
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById('screen-' + tab).classList.add('active');
+    if (tab === 'models') renderModels();
+    else if (tab === 'saved') { if (!S.saved.length) document.getElementById('screen-saved').innerHTML = '<div class="empty"><span class="spinner"></span></div>'; await loadSaved(); }
+    else if (tab === 'stats') { document.getElementById('screen-stats').innerHTML = '<div class="empty"><span class="spinner"></span></div>'; await loadStats(); }
+    else if (tab === 'admin') { await loadAdmin(); }
+  };
+});
+document.getElementById('btn-refresh').onclick = async () => {
+  toast('Обновляю…');
+  if (tab === 'saved') await loadSaved();
+  else if (tab === 'stats') await loadStats();
+  else if (tab === 'admin') await loadAdmin();
+  else await load();
+};
 
 Telegram.WebApp.ready();
 Telegram.WebApp.expand();

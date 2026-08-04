@@ -13,6 +13,7 @@ from config import BOT_TOKEN, CHECK_LOOP_SECONDS, WEBAPP_URL
 from database.db import init_db
 from bot.middlewares.auth import AuthMiddleware, ThrottlingMiddleware
 from scheduler.manager import check_all_users
+from webapp import api as webapp_api
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
@@ -32,8 +33,6 @@ async def init_web_server() -> web.AppRunner:
     app.router.add_get("/health", handle_health)
     app.router.add_get("/", handle_health)
 
-    from webapp import api as webapp_api
-
     app.router.add_get("/app", webapp_api.index)
     app.router.add_get("/api/init", webapp_api.api_init)
     app.router.add_get("/api/settings", webapp_api.api_settings)
@@ -44,6 +43,19 @@ async def init_web_server() -> web.AppRunner:
     app.router.add_post("/api/settings/pause_all", webapp_api.api_pause_all)
     app.router.add_post("/api/settings/resume_all", webapp_api.api_resume_all)
     app.router.add_get("/api/stats", webapp_api.api_stats)
+    app.router.add_get("/api/saved", webapp_api.api_saved)
+    app.router.add_post("/api/saved/remove", webapp_api.api_saved_remove)
+    app.router.add_post("/api/check", webapp_api.api_check)
+    app.router.add_get("/api/hidden", webapp_api.api_hidden)
+    app.router.add_post("/api/hidden/remove", webapp_api.api_hidden_remove)
+
+    app.router.add_get("/api/admin/dashboard", webapp_api.api_admin_dashboard)
+    app.router.add_get("/api/admin/users", webapp_api.api_admin_users)
+    app.router.add_post("/api/admin/user/level", webapp_api.api_admin_user_level)
+    app.router.add_post("/api/admin/user/block", webapp_api.api_admin_user_block)
+    app.router.add_post("/api/admin/user/stats", webapp_api.api_admin_user_stats)
+    app.router.add_post("/api/admin/grant", webapp_api.api_admin_grant)
+    app.router.add_post("/api/admin/broadcast", webapp_api.api_admin_broadcast)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -78,6 +90,7 @@ async def main() -> None:
     bot = Bot(token=BOT_TOKEN)
     global _bot
     _bot = bot
+    webapp_api.set_bot(bot)
 
     try:
         await bot.set_chat_menu_button(

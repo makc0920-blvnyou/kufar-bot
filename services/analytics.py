@@ -24,6 +24,56 @@ def _quartiles(prices: list[float]) -> tuple[float, float, float]:
     return pct(0.25), pct(0.50), pct(0.75)
 
 
+async def build_user_stats(user: User) -> dict:
+    settings = await get_settings_for_user(user.id)
+    notified = await count_notifications_for_user(user.id)
+    hidden = await list_hidden_models(user.id)
+    active = sum(1 for s in settings if s.is_active)
+
+    models = []
+    for s in settings[:10]:
+        prices = await get_recent_price_raw(s.model)
+        q1, q2, q3 = _quartiles(prices)
+        models.append(
+            {
+                "id": s.id,
+                "model": s.model,
+                "is_active": s.is_active,
+                "min_price": s.min_price,
+                "max_price": s.max_price,
+                "cities": s.cities,
+                "check_interval": s.check_interval,
+                "median": q2,
+                "q1": q1,
+                "q3": q3,
+                "market_count": len(prices),
+                "market_max": max(prices) if prices else None,
+            }
+        )
+
+    week = await notifications_since(user.id, 7)
+    by_day: dict[str, int] = {}
+    for n in week:
+        day = n.sent_at.strftime("%d.%m") if n.sent_at else "?"
+        by_day[day] = by_day.get(day, 0) + 1
+    week_sorted = [
+        {"day": d, "count": c}
+        for d, c in sorted(by_day.items(), reverse=True)
+    ]
+
+    return {
+        "username": user.username,
+        "first_name": user.first_name,
+        "access_level": user.access_level,
+        "models_count": len(settings),
+        "active_count": active,
+        "notified": notified,
+        "hidden": hidden,
+        "models": models,
+        "week": week_sorted,
+    }
+
+
 async def format_user_stats(user: User) -> str:
     settings = await get_settings_for_user(user.id)
     notified = await count_notifications_for_user(user.id)
