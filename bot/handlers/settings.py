@@ -16,6 +16,7 @@ from database.db import (
     MODEL_PRICES,
     add_setting,
     clear_settings_for_user,
+    count_active_settings_for_user,
     count_settings_for_user,
     delete_setting,
     get_settings_for_user,
@@ -161,6 +162,17 @@ async def cb_toggle(callback: CallbackQuery, db_user) -> None:
     if setting is None or setting.user_id != db_user.id:
         await callback.answer("Правило не найдено", show_alert=True)
         return
+    if not setting.is_active:
+        limits = _limits_for(db_user)
+        if limits["max_models"] is not None:
+            active = await count_active_settings_for_user(db_user.id)
+            if active >= limits["max_models"]:
+                await callback.answer(
+                    f"Лимит активных моделей «{db_user.access_level}»: {limits['max_models']}. "
+                    f"Сначала поставьте на паузу другую.",
+                    show_alert=True,
+                )
+                return
     await set_setting_active(sid, not setting.is_active)
     await callback.answer("✅ Готово")
     setting.is_active = not setting.is_active

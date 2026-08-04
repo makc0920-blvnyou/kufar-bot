@@ -301,11 +301,24 @@ async def api_toggle(request: web.Request) -> web.Response:
     except json.JSONDecodeError:
         return _fail("bad json")
 
-    from database.db import get_setting, set_setting_active
+    from database.db import (
+        count_active_settings_for_user,
+        get_setting,
+        set_setting_active,
+    )
 
     setting = await get_setting(int(body.get("id") or 0))
     if setting is None or setting.user_id != db_user.id:
         return _fail("правило не найдено", 404)
+    if not setting.is_active:
+        limits = _limits_for(db_user.access_level)
+        if limits["max_models"] is not None:
+            active = await count_active_settings_for_user(db_user.id)
+            if active >= limits["max_models"]:
+                return _fail(
+                    f"Лимит активных моделей для «{db_user.access_level}»: "
+                    f"{limits['max_models']}. Сначала поставьте на паузу другую."
+                )
     await set_setting_active(setting.id, not setting.is_active)
     return _ok(is_active=not setting.is_active)
 
@@ -322,7 +335,9 @@ async def api_resume_all(request: web.Request) -> web.Response:
     db_user, err, code = await _require_approved(request)
     if err:
         return _fail(err, code)
-    n = await pause_all_for_user(db_user.id, paused=False)
+    from database.db import resume_settings_limited
+
+    n = await resume_settings_limited(db_user.id, _limits_for(db_user.access_level)["max_models"])
     return _ok(updated=n)
 
 

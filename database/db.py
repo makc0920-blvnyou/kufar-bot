@@ -3,10 +3,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from loguru import logger
-from sqlalchemy import select, text, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from config import DATABASE_URL, PENDING_LEVEL, PREMIUM_DURATION_DAYS
+from config import ACCESS_LIMITS, DATABASE_URL, PENDING_LEVEL, PREMIUM_DURATION_DAYS
 from database.models import (
     Base,
     HiddenModel,
@@ -150,6 +150,8 @@ async def grant_access(user_id: int, access_level: str = "free") -> User:
         _apply_premium_expiry(user, access_level)
         await session.commit()
         await session.refresh(user)
+        if access_level == "free":
+            await pause_settings_over_limit(user_id, ACCESS_LIMITS["free"]["max_models"])
         return user
 
 
@@ -170,6 +172,8 @@ async def set_access_level(user_id: int, level: str) -> None:
             user.access_level = level
             _apply_premium_expiry(user, level)
             await session.commit()
+    if level == "free":
+        await pause_settings_over_limit(user_id, ACCESS_LIMITS["free"]["max_models"])
 
 
 async def list_pending_users() -> list[User]:
@@ -198,7 +202,70 @@ async def downgrade_expired_premiums() -> int:
         if expired:
             await session.commit()
             logger.info(f"Premium истёк, даунгрейд до free: {[u.id for u in expired]}")
-        return len(expired)
+        else:
+            return 0
+    for user in expired:
+        await pause_settings_over_limit(user.id, ACCESS_LIMITS["free"]["max_models"])
+    return len(expired)
+
+
+async def count_active_settings_for_user(user_id: int) -> int:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(func.count()).select_from(UserSettings).where(
+                UserSettings.user_id == user_id, UserSettings.is_active.is_(True)
+            )
+        )
+        return int(result.scalar() or 0)
+
+
+async def pause_settings_over_limit(user_id: int, max_active: int) -> int:
+    """Оставляет max_active самых старых активных, остальные уводит в паузу."""
+    if not max_active:
+        return 0
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(UserSettings)
+            .where(UserSettings.user_id == user_id, UserSettings.is_active.is_(True))
+            .order_by(UserSettings.id)
+        )
+        actives = list(result.scalars().all())
+        extra = actives[max_active:]
+        for s in extra:
+            s.is_active = False
+        if extra:
+            await session.commit()
+            logger.info(f"Пользователь {user_id}: {len(extra)} моделей сверх лимита {max_active} уведены в паузу")
+        return len(extra)
+
+
+async def resume_settings_limited(user_id: int, max_active: int | None) -> int:
+    """Активирует приостановленные настройки, пока активно не станет больше max_active."""
+    if max_active is None:
+        return await pause_all_for_user(user_id, paused=False)
+    async with SessionLocal() as session:
+        active_count = (
+            await session.execute(
+                select(func.count()).select_from(UserSettings).where(
+                    UserSettings.user_id == user_id, UserSettings.is_active.is_(True)
+                )
+            )
+        ).scalar_one()
+        need = int(max_active) - int(active_count or 0)
+        if need <= 0:
+            return 0
+        result = await session.execute(
+            select(UserSettings)
+            .where(UserSettings.user_id == user_id, UserSettings.is_active.is_(False))
+            .order_by(UserSettings.id)
+            .limit(need)
+        )
+        paused = list(result.scalars().all())
+        for s in paused:
+            s.is_active = True
+        if paused:
+            await session.commit()
+        return len(paused)
 
 
 async def find_user_by_username(username: str) -> Optional[User]:

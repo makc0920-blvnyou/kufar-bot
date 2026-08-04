@@ -242,8 +242,11 @@ async def cmd_pause(message: Message, db_user) -> None:
 
 @router.message(Command("resume"))
 async def cmd_resume(message: Message, db_user) -> None:
-    n = await pause_all_for_user(db_user.id, paused=False)
-    await message.answer(f"▶️ Уведомления возобновлены ({n} правил).")
+    from database.db import resume_settings_limited
+
+    n = await resume_settings_limited(db_user.id, _limits_for(db_user)["max_models"])
+    await message.answer(f"▶️ Возобновлено: {n}. " if n else "▶️ Нечего возобновлять. " +
+                         f"Лимит активных моделей: {_limits_for(db_user)['max_models'] or 'безлимит'}")
 
 
 @router.message(Command("saved"))
