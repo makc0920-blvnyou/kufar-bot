@@ -19,13 +19,35 @@ from database.db import (
     save_listing,
 )
 from database.locations import REGION_NAMES
-from parser.kufar import fetch_listings
+from parser.kufar import fetch_listing_details, fetch_listings
 from services.notification import send_listing_to_user
 
 _lock = asyncio.Lock()
 
 _fetch_cache: list[dict[str, Any]] | None = None
 _fetch_cache_time: float = 0.0
+
+_detail_cache: dict[str, dict[str, Any]] = {}
+
+
+async def _enriched(listing: dict[str, Any]) -> dict[str, Any]:
+    """Достраивает описание/телефон из страницы объявления (поисковое API их не отдаёт)."""
+    lid = listing.get("id", "")
+    if not lid or listing.get("description"):
+        return listing
+    if lid not in _detail_cache:
+        extra = await fetch_listing_details(lid)
+        _detail_cache[lid] = extra if extra else {}
+        await asyncio.sleep(0.3)  # щадим Куфар
+    extra = _detail_cache.get(lid, {})
+    if not extra:
+        return listing
+    merged = dict(listing)
+    if extra.get("description"):
+        merged["description"] = extra["description"]
+    if extra.get("phones"):
+        merged["phones"] = extra["phones"]
+    return merged
 
 _last_run_by_setting: dict[int, float] = {}
 
@@ -118,7 +140,8 @@ async def check_for_user(bot: Bot, user_id: int) -> int:
                 continue
             if not match_setting(listing, setting):
                 continue
-            ok = await send_listing_to_user(bot, user_id, setting, listing)
+            enriched = await _enriched(listing)
+            ok = await send_listing_to_user(bot, user_id, setting, enriched)
             if ok:
                 await record_notification(user_id, lid)
                 sent_count += 1
@@ -164,7 +187,8 @@ async def check_all_users(bot: Bot) -> int:
                     continue
                 if not match_setting(listing, setting):
                     continue
-                ok = await send_listing_to_user(bot, setting.user_id, setting, listing)
+                enriched = await _enriched(listing)
+                ok = await send_listing_to_user(bot, setting.user_id, setting, enriched)
                 if ok:
                     await record_notification(setting.user_id, lid)
                     sent_count += 1

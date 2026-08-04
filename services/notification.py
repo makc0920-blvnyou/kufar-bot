@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from html import escape
 from typing import Any
 
@@ -28,6 +28,31 @@ def _relative_time(found_at: Any) -> str | None:
     if seconds < 86400:
         return f"{seconds // 3600} ч назад"
     return f"{seconds // 86400} дн назад"
+
+
+def _posted_time(found_at: Any) -> str | None:
+    """Абсолютное время выкладки объявления (Минск, UTC+3)."""
+    dt = None
+    if isinstance(found_at, str):
+        s = found_at.strip()
+        try:
+            if s.endswith("Z"):
+                dt = datetime.fromisoformat(s[:-1] + "+00:00")
+            else:
+                dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            dt = None
+    elif isinstance(found_at, (int, float)):
+        try:
+            dt = datetime.fromtimestamp(int(found_at), tz=timezone.utc)
+        except (ValueError, OSError):
+            dt = None
+    if dt is None:
+        return None
+    minsk = dt.astimezone(timezone(timedelta(hours=3)))
+    return minsk.strftime("%d.%m.%Y в %H:%M")
 
 
 def _find_model_limit(title: str, model: str) -> float | None:
@@ -70,11 +95,14 @@ def format_listing(listing: dict, setting: UserSettings | None = None) -> str:
     when = _relative_time(listing.get("date"))
     badge = " 🆕" if when == "только что" else ""
     parts.append(f"📱 <b>{title}</b>{badge}")
-    meta = []
+    meta = [f"📍 {city}"]
     if when:
         meta.append(f"🕒 {when}")
-    meta.append(f"📍 {city}")
     parts.append(" · ".join(meta))
+
+    posted = _posted_time(listing.get("date"))
+    if posted:
+        parts.append(f"🕒 Выложено: <b>{posted}</b>")
 
     # Цена + настроенный лимит
     parts.append("")

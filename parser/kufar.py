@@ -165,6 +165,58 @@ def format_phone(phone: str) -> str:
     return f"+{d[0:3]} ({d[3:5]}) {d[5:8]}-{d[8:10]}-{d[10:12]}"
 
 
+_NEXT_DATA_RE = _re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', _re.S)
+
+
+async def fetch_listing_details(listing_id: str) -> dict[str, Any]:
+    """Дотягивает полное описание и телефон со страницы объявления.
+
+    Поисковое API Куфара присылает body=None, поэтому для новых объявлений
+    берём описание из SSR-разметки страницы.
+    """
+    import json
+
+    import httpx as _httpx
+
+    try:
+        async with _httpx.AsyncClient(follow_redirects=True) as client:
+            response = await client.get(
+                f"https://www.kufar.by/item/{listing_id}",
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    "Accept-Language": "ru-RU,ru;q=0.9",
+                },
+                timeout=15.0,
+            )
+            if response.status_code != 200:
+                return {}
+            html = response.text
+    except Exception as e:
+        logger.debug(f"Не удалось получить страницу объявления {listing_id}: {e}")
+        return {}
+
+    m = _NEXT_DATA_RE.search(html)
+    if not m:
+        return {}
+    try:
+        data = json.loads(m.group(1))
+        initial = data["props"]["initialState"]["adView"]["data"]["initial"]
+    except (KeyError, TypeError, ValueError):
+        return {}
+
+    if not isinstance(initial, dict):
+        return {}
+
+    result: dict[str, Any] = {}
+    body = (initial.get("body") or "").strip()
+    if body:
+        result["description"] = body[:2000]
+    phones = _extract_phones(initial)
+    if phones:
+        result["phones"] = phones
+    return result
+
+
 def _extract_battery(raw: dict[str, Any]) -> str | None:
     text = " ".join([
         raw.get("subject", ""),
