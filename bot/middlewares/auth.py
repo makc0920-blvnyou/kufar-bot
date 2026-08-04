@@ -82,7 +82,10 @@ class ThrottlingMiddleware(BaseMiddleware):
             now = time.monotonic()
             stamps = [t for t in self._stamps.get(user_id, []) if now - t < self._window]
             if len(stamps) >= self._limit:
-                return  # молча дропаем лишние запросы
+                # ВАЖНО: отвечаем на callback, иначе кнопка Telegram «висит»
+                if isinstance(event, CallbackQuery):
+                    await event.answer("⏳ Не так быстро", show_alert=False)
+                return
             stamps.append(now)
             self._stamps[user_id] = stamps
         return await handler(event, data)

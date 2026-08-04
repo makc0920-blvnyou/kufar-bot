@@ -66,9 +66,9 @@ async def main() -> None:
     _bot = bot
 
     dp = Dispatcher(storage=MemoryStorage())
-    dp.message.middleware(ThrottlingMiddleware())
+    dp.message.middleware(ThrottlingMiddleware(limit_per_min=10))
     dp.message.middleware(AuthMiddleware())
-    dp.callback_query.middleware(ThrottlingMiddleware())
+    dp.callback_query.middleware(ThrottlingMiddleware(limit_per_min=60))
     dp.callback_query.middleware(AuthMiddleware())
 
     from bot.handlers import setup as setup_routers
