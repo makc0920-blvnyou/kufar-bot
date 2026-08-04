@@ -1,10 +1,12 @@
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from database.db import (
     count_notifications_for_user,
     count_settings_for_user,
-    get_settings_for_user,
     get_recent_price_raw,
+    get_settings_for_user,
+    list_hidden_models,
+    notifications_since,
 )
 from database.models import User
 
@@ -26,6 +28,7 @@ async def format_user_stats(user: User) -> str:
     settings = await get_settings_for_user(user.id)
     notified = await count_notifications_for_user(user.id)
     active = sum(1 for s in settings if s.is_active)
+    hidden = await list_hidden_models(user.id)
 
     lines = [
         f"📊 <b>Статистика</b>",
@@ -33,6 +36,7 @@ async def format_user_stats(user: User) -> str:
         f"⭐ Уровень: {user.access_level}",
         f"📋 Моделей: {len(settings)} (активно: {active})",
         f"📨 Уведомлений отправлено: {notified}",
+        f"🙈 Скрытых моделей: {len(hidden)}",
         "",
     ]
 
@@ -50,4 +54,31 @@ async def format_user_stats(user: User) -> str:
             else:
                 lines.append(f"{status} <b>{s.model}</b> — нет данных рынка")
 
+    week = await notifications_since(user.id, 7)
+    if week:
+        days: dict[str, int] = {}
+        for n in week:
+            day = n.sent_at.strftime("%d.%m") if n.sent_at else "?"
+            days[day] = days.get(day, 0) + 1
+        lines.append("\n<b>За неделю:</b>")
+        for day in sorted(days, reverse=True):
+            lines.append(f"  {day}: {days[day]} 📨")
+
+    return "\n".join(lines)
+
+
+async def format_admin_dashboard() -> str:
+    from database.db import count_listings, list_active_users, list_users, total_listings_since
+
+    users = await list_users()
+    active = await list_active_users()
+    total_listings = await count_listings()
+    new_7d = await total_listings_since(7)
+
+    lines = [
+        "📈 <b>Дашборд</b>",
+        f"👥 Пользователей: {len(users)} (активных: {len(active)})",
+        f"📦 Объявлений в базе: {total_listings}",
+        f"🆕 Новых за 7 дней: {new_7d}",
+    ]
     return "\n".join(lines)

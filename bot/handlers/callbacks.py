@@ -2,11 +2,10 @@ from aiogram import F, Router
 from aiogram.types import CallbackQuery
 from loguru import logger
 
-from bot.keyboards.inline import build_settings_menu
 from database.db import (
+    add_hidden_model,
     get_listing,
     get_setting,
-    pause_all_for_user,
     save_favorite,
     set_setting_active,
 )
@@ -40,31 +39,12 @@ async def cb_pause(callback: CallbackQuery, db_user) -> None:
     await callback.answer(f"⏸️ {setting.model} — пауза включена")
 
 
-@router.callback_query(F.data == "settings:add_model")
-async def cb_settings_add_model(callback: CallbackQuery, db_user) -> None:
-    await callback.answer()
-    await callback.message.answer(
-        "➕ <b>Добавить модель</b>\n\n"
-        "<code>/add_model Модель [мин] [макс] [интервал_сек] [города]</code>\n\n"
-        "Пример:\n<code>/add_model iPhone 15 Pro 700 1400 300 Минск,Гомель</code>"
-    )
-
-
-@router.callback_query(F.data == "settings:list_models")
-async def cb_settings_list_models(callback: CallbackQuery, db_user) -> None:
-    await callback.answer()
-    from bot.handlers.user import cmd_my_models
-
-    await cmd_my_models(callback.message, db_user)
-
-
-@router.callback_query(F.data == "settings:pause_all")
-async def cb_settings_pause_all(callback: CallbackQuery, db_user) -> None:
-    n = await pause_all_for_user(db_user.id, paused=True)
-    await callback.answer(f"⏸️ Пауза включена ({n} правил)", show_alert=True)
-
-
-@router.callback_query(F.data == "settings:resume_all")
-async def cb_settings_resume_all(callback: CallbackQuery, db_user) -> None:
-    n = await pause_all_for_user(db_user.id, paused=False)
-    await callback.answer(f"▶️ Возобновлено ({n} правил)", show_alert=True)
+@router.callback_query(F.data.startswith("hide:"))
+async def cb_hide(callback: CallbackQuery, db_user) -> None:
+    model = callback.data.split(":", 1)[1]
+    created = await add_hidden_model(db_user.id, model)
+    if created:
+        logger.info(f"Скрыты похожие «{model}» для {db_user.id}")
+        await callback.answer(f"🙈 Похожие на «{model}» скрыты")
+    else:
+        await callback.answer("Уже скрыто")

@@ -156,3 +156,33 @@ async def broadcast(bot: Bot, user_ids: list[int], text: str) -> int:
         except Exception as e:
             logger.warning(f"Broadcast не доставлен {uid}: {e}")
     return sent
+
+
+async def edit_message(target, text: str, kb=None) -> None:
+    """Правка сообщения для CallbackQuery или ответ для Message."""
+    try:
+        if hasattr(target, "message") and target.message is not None:
+            await target.message.edit_text(
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+        else:
+            await target.answer(
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+    except Exception as e:
+        logger.warning(f"edit_text не прошёл: {e}")
+        try:
+            await target.answer(
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+        except Exception as e2:
+            logger.error(f"Не удалось показать сообщение: {e2}")

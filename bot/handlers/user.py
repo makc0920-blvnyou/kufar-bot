@@ -3,18 +3,16 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from loguru import logger
 
-from bot.keyboards.inline import build_settings_menu
+from bot.handlers.settings import show_settings_menu
 from config import ACCESS_LIMITS, DEFAULT_ACCESS_LEVEL, MIN_PRICE_GLOBAL
 from database.db import (
     MODEL_PRICES,
     add_setting,
-    count_notifications_for_user,
     count_settings_for_user,
     delete_setting,
     get_settings_for_user,
     list_favorites,
     pause_all_for_user,
-    set_setting_active,
 )
 from services.analytics import format_user_stats
 
@@ -77,7 +75,7 @@ async def cmd_help(message: Message, db_user) -> None:
 
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, db_user) -> None:
-    await message.answer("⚙️ <b>Настройки</b>\n\nВыберите действие:", reply_markup=build_settings_menu())
+    await show_settings_menu(message, db_user)
 
 
 @router.message(Command("add_model"))

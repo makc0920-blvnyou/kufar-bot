@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from config import DATABASE_URL
 from database.models import (
     Base,
+    HiddenModel,
     Listing,
     Notification,
     SavedListing,
@@ -251,6 +252,104 @@ async def count_settings_for_user(user_id: int) -> int:
         return len(result.scalars().all())
 
 
+async def update_setting(
+    setting_id: int,
+    *,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    cities: str | None = None,
+    check_interval: int | None = None,
+    send_photos: bool | None = None,
+    show_description: bool | None = None,
+) -> bool:
+    values: dict[str, Any] = {}
+    if min_price is not None:
+        values["min_price"] = min_price
+    if max_price is not None:
+        values["max_price"] = max_price
+    if cities is not None:
+        values["cities"] = cities
+    if check_interval is not None:
+        values["check_interval"] = check_interval
+    if send_photos is not None:
+        values["send_photos"] = send_photos
+    if show_description is not None:
+        values["show_description"] = show_description
+    if not values:
+        return False
+
+    async with SessionLocal() as session:
+        result = await session.execute(
+            update(UserSettings).where(UserSettings.id == setting_id).values(**values)
+        )
+        await session.commit()
+        return (result.rowcount or 0) > 0
+
+
+async def clear_settings_for_user(user_id: int) -> int:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            update(UserSettings).where(UserSettings.user_id == user_id).values(is_active=False)
+        )
+        await session.commit()
+        return result.rowcount or 0
+
+
+# --- Скрытые модели ----------------------------------------------------------
+
+async def add_hidden_model(user_id: int, model: str) -> bool:
+    model = (model or "").strip()
+    if not model:
+        return False
+    async with SessionLocal() as session:
+        exists = await session.execute(
+            select(HiddenModel).where(
+                HiddenModel.user_id == user_id,
+                HiddenModel.model == model,
+            )
+        )
+        if exists.scalar_one_or_none() is not None:
+            return False
+        session.add(HiddenModel(user_id=user_id, model=model))
+        await session.commit()
+        return True
+
+
+async def is_model_hidden(user_id: int, model: str) -> bool:
+    if not model:
+        return False
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(HiddenModel.id).where(
+                HiddenModel.user_id == user_id,
+                HiddenModel.model == model,
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+
+async def list_hidden_models(user_id: int) -> list[str]:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(HiddenModel).where(HiddenModel.user_id == user_id)
+        )
+        return [h.model for h in result.scalars().all()]
+
+
+async def remove_hidden_model(user_id: int, model: str) -> None:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(HiddenModel).where(
+                HiddenModel.user_id == user_id,
+                HiddenModel.model == model,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            await session.delete(row)
+            await session.commit()
+
+
 # --- Объявления --------------------------------------------------------------
 
 async def listing_exists(listing_id: str) -> bool:
@@ -361,3 +460,25 @@ async def count_notifications_for_user(user_id: int) -> int:
             select(Notification).where(Notification.user_id == user_id)
         )
         return len(result.scalars().all())
+
+
+async def notifications_since(user_id: int, days: int) -> list[Notification]:
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Notification)
+            .where(Notification.user_id == user_id, Notification.sent_at >= cutoff)
+            .order_by(Notification.sent_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+async def total_listings_since(days: int) -> int:
+    from sqlalchemy import func
+
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(func.count(Listing.id)).where(Listing.fetched_at >= cutoff.isoformat())
+        )
+        return int(result.scalar() or 0)

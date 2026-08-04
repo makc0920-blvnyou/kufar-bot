@@ -101,3 +101,18 @@ class Notification(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "listing_id", name="uq_notif_user_listing"),
     )
+
+
+class HiddenModel(Base):
+    """Модель, скрытая пользователем (кнопка «Скрыть похожие»)."""
+
+    __tablename__ = "hidden_models"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), index=True)
+    model: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "model", name="uq_hidden_user_model"),
+    )

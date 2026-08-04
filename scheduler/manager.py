@@ -12,6 +12,7 @@ from config import (
 )
 from database.db import (
     get_active_settings,
+    is_model_hidden,
     listing_exists,
     notification_exists,
     record_notification,
@@ -89,6 +90,8 @@ async def check_for_user(bot: Bot, user_id: int) -> int:
                 continue
             if await notification_exists(user_id, lid):
                 continue
+            if await is_model_hidden(user_id, listing.get("model", "")):
+                continue
             if not match_setting(listing, setting):
                 continue
             ok = await send_listing_to_user(bot, user_id, setting, listing)
@@ -132,6 +135,8 @@ async def check_all_users(bot: Bot) -> int:
                 if not lid:
                     continue
                 if await notification_exists(setting.user_id, lid):
+                    continue
+                if await is_model_hidden(setting.user_id, listing.get("model", "")):
                     continue
                 if not match_setting(listing, setting):
                     continue
