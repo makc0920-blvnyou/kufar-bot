@@ -12,6 +12,7 @@ from bot.keyboards.inline import (
 )
 from config import ACCESS_LIMITS, DEFAULT_ACCESS_LEVEL, MIN_PRICE_GLOBAL
 from database.db import (
+    DEFAULT_LIMIT_MODELS,
     MODEL_PRICES,
     add_setting,
     clear_settings_for_user,
@@ -110,7 +111,7 @@ async def cb_browser_page(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("mp:"))
 async def cb_pick_model(callback: CallbackQuery, db_user) -> None:
     idx = int(callback.data.split(":")[1])
-    models = list(MODEL_PRICES.keys())
+    models = DEFAULT_LIMIT_MODELS  # тот же список, что в браузере
     if idx >= len(models):
         await callback.answer("Модель не найдена", show_alert=True)
         return
