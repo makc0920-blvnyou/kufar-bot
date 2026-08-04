@@ -62,8 +62,8 @@ PREMIUM_DURATION_DAYS: int = _env_int("PREMIUM_DURATION_DAYS", 30)
 DEFAULT_ACCESS_LEVEL: str = _env("DEFAULT_ACCESS_LEVEL", "free")
 
 ACCESS_LIMITS: dict[str, dict[str, int | None]] = {
-    # free: 1 модель, проверка раз в минуту
-    "free": {"max_models": 1, "min_interval": 60},
+    # free: 5 моделей, проверка раз в минуту
+    "free": {"max_models": 5, "min_interval": 60},
     # premium: безлимит моделей, мин. интервал 15 сек, выдаётся на PREMIUM_DURATION_DAYS
     "premium": {"max_models": None, "min_interval": 15},
     # vip: как premium (для особых случаев)
