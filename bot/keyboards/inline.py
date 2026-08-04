@@ -20,9 +20,11 @@ def build_listing_keyboard(listing: dict, setting_id: int | None = None) -> Inli
     url = listing.get("url", "#")
     listing_id = listing.get("id", "")
     model = (listing.get("model") or "").strip()
-    buttons: list[list[InlineKeyboardButton]] = [
-        [InlineKeyboardButton(text="🔗 Открыть объявление", url=url)],
-    ]
+    buttons: list[list[InlineKeyboardButton]] = []
+    phones = listing.get("phones") or []
+    if phones:
+        buttons.append([InlineKeyboardButton(text="📞 Позвонить", url=f"tel:{phones[0]}")])
+    buttons.append([InlineKeyboardButton(text="🔗 Открыть объявление", url=url)])
     row: list[InlineKeyboardButton] = [
         InlineKeyboardButton(text="⭐ В избранное", callback_data=f"save:{listing_id}"),
     ]

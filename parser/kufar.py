@@ -122,6 +122,48 @@ def _extract_city(ad: dict[str, Any]) -> str:
 
 import re as _re
 
+_PHONE_RE = _re.compile(
+    r"(?:\+?375[\s\-\(\)]{0,4}\d{2}[\s\-\(\)]{0,4}\d{3}[\s\-\(\)]{0,4}\d{2}[\s\-\(\)]{0,4}\d{2}"
+    r"|\+?375\d{9}"
+    r"|8\s?\(\s?0?\d{2}\s?\)[\s\-]{0,4}\d{3}[\s\-]{0,4}\d{2}[\s\-]{0,4}\d{2}"
+    r"|8\s?0\s?\d{2}[\s\-]{0,4}\d{7})"
+)
+
+
+def _normalize_phone(raw: str) -> str | None:
+    digits = _re.sub(r"[^\d+]", "", raw)
+    if digits.startswith("+375") and len(digits) == 13:
+        return digits
+    if digits.startswith("375") and len(digits) == 12:
+        return "+" + digits
+    if digits.startswith("80") and len(digits) == 11:
+        return "+375" + digits[1:].lstrip("0")
+    return None
+
+
+def _extract_phones(raw: dict[str, Any]) -> list[str]:
+    texts = [
+        raw.get("subject", ""),
+        raw.get("body") or "",
+        raw.get("body_short") or "",
+    ]
+    texts += [str(p.get("v") or p.get("vl") or "") for p in raw.get("ad_parameters", [])]
+    text = " ".join(t for t in texts if t)
+
+    found: list[str] = []
+    for m in _PHONE_RE.finditer(text):
+        ph = _normalize_phone(m.group(0))
+        if ph and ph not in found:
+            found.append(ph)
+    return found
+
+
+def format_phone(phone: str) -> str:
+    d = _re.sub(r"[^\d]", "", phone)
+    if not d.startswith("375") or len(d) != 12:
+        return phone
+    return f"+{d[0:3]} ({d[3:5]}) {d[5:8]}-{d[8:10]}-{d[10:12]}"
+
 
 def _extract_battery(raw: dict[str, Any]) -> str | None:
     text = " ".join([
@@ -198,6 +240,7 @@ def parse_listing_raw(raw: dict[str, Any]) -> dict[str, Any] | None:
         "model": _extract_model(raw),
         "storage": _extract_storage(raw),
         "price_raw": _extract_price_raw(raw),
+        "phones": _extract_phones(raw),
     }
 
 

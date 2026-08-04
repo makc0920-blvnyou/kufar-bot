@@ -107,6 +107,13 @@ def format_listing(listing: dict, setting: UserSettings | None = None) -> str:
         parts.append("")
         parts.append(" · ".join(specs))
 
+    # Телефон (если указан в объявлении)
+    phones = listing.get("phones") or []
+    if phones:
+        from parser.kufar import format_phone
+
+        parts.append(f"📞 <b>{escape(format_phone(phones[0]))}</b>")
+
     # Описание — всегда, если есть
     if desc:
         parts.append("")
