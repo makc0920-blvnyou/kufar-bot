@@ -71,11 +71,10 @@ def _find_model_limit(title: str, model: str) -> float | None:
 def _price_range(setting: UserSettings | None) -> str | None:
     if setting is None:
         return None
-    lo, hi = setting.min_price, setting.max_price
-    if lo and hi:
-        return f"{lo:,.0f} – {hi:,.0f} BYN"
+    hi = setting.max_price
     if hi:
-        return f"до {hi:,.0f} BYN"
+        return f"{hi:,.0f} BYN"
+    lo = setting.min_price
     if lo:
         return f"от {lo:,.0f} BYN"
     return None
