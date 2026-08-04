@@ -1,96 +1,105 @@
 import asyncio
 import os
 import sys
+
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
-from config import BOT_TOKEN, CHAT_ID, ALL_CHAT_IDS, CHECK_INTERVAL_MINUTES
+from config import BOT_TOKEN, CHECK_LOOP_SECONDS
 from database.db import init_db
-from bot.handlers import router
-from scheduler.jobs import check_kufar
+from bot.middlewares.auth import AuthMiddleware, ThrottlingMiddleware
+from scheduler.manager import check_all_users
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
 scheduler = AsyncIOScheduler()
 
-async def handle_health(request):
-    """Health check endpoint для Render"""
+# Глобальная ссылка на бота для задач планировщика
+_bot: Bot | None = None
+
+
+async def handle_health(request: web.Request) -> web.Response:
     return web.Response(text="OK")
 
-async def init_web_server():
-    """Запуск веб-сервера для health checks"""
+
+async def init_web_server() -> web.AppRunner:
     app = web.Application()
-    app.router.add_get('/health', handle_health)
-    app.router.add_get('/', handle_health)
-    
+    app.router.add_get("/health", handle_health)
+    app.router.add_get("/", handle_health)
+
     runner = web.AppRunner(app)
     await runner.setup()
-    
-    # Render передаёт порт через переменную окружения PORT
+
     port = int(os.environ.get("PORT", 8080))
-    site = web.TCPSite(runner, '0.0.0.0', port)
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    
-    logger.info(f"✅ Web server запущен на порту {port}")
-    logger.info(f"✅ Health check доступен: http://0.0.0.0:{port}/health")
+
+    logger.info(f"✅ Web server на порту {port}, health: /health")
     return runner
 
-async def main():
-    # Стартуем веб-сервер НЕМЕДЛЕННО, чтобы Render увидел порт
+
+async def scheduled_tick() -> None:
+    if _bot is None:
+        return
+    try:
+        await check_all_users(_bot)
+    except Exception as e:
+        logger.exception(f"Ошибка в scheduled_tick: {e}")
+
+
+async def main() -> None:
     web_runner = await init_web_server()
 
-    logger.info("🚀 Запуск Kufar iPhone Monitor")
-    logger.info(f"PORT из окружения: {os.environ.get('PORT', 'NOT SET')}")
-
     if not BOT_TOKEN:
-        logger.error("❌ BOT_TOKEN не задан в .env")
+        logger.error("❌ BOT_TOKEN не задан")
+        await web_runner.cleanup()
         return
 
-    if CHAT_ID == 0:
-        logger.error("❌ CHAT_ID не задан в .env")
-        return
-
-    # Инициализация БД
     await init_db()
-    logger.info("✅ База данных инициализирована")
 
-    # Создание бота
     bot = Bot(token=BOT_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
-    dp.include_router(router)
+    global _bot
+    _bot = bot
 
-    # Настройка планировщика
+    dp = Dispatcher(storage=MemoryStorage())
+    dp.message.middleware(ThrottlingMiddleware())
+    dp.message.middleware(AuthMiddleware())
+    dp.callback_query.middleware(ThrottlingMiddleware())
+    dp.callback_query.middleware(AuthMiddleware())
+
+    from bot.handlers import setup as setup_routers
+
+    dp.include_router(setup_routers())
+
     scheduler.add_job(
-        check_kufar,
+        scheduled_tick,
         trigger="interval",
-        minutes=CHECK_INTERVAL_MINUTES,
-        args=[bot],
-        id="check_kufar",
+        seconds=CHECK_LOOP_SECONDS,
+        id="user_loop",
         replace_existing=True,
+        max_instances=1,
     )
     scheduler.start()
-    logger.info(f"✅ Планировщик запущен (интервал: {CHECK_INTERVAL_MINUTES} мин)")
+    logger.info(f"✅ Планировщик: цикл каждые {CHECK_LOOP_SECONDS} сек")
 
-    logger.info(f"✅ Бот запущен. Чаты: {ALL_CHAT_IDS}")
-    logger.info("Ожидание обновлений от Telegram...")
-
+    logger.info("🚀 Бот запущен. Ожидание обновлений...")
     try:
-        # Запуск polling
         await dp.start_polling(bot, skip_updates=True)
     except KeyboardInterrupt:
-        logger.info("Получен KeyboardInterrupt")
+        logger.info("KeyboardInterrupt")
     except Exception as e:
         logger.exception(f"Критическая ошибка: {e}")
     finally:
-        logger.info("⏹️  Остановка бота...")
+        logger.info("⏹️  Остановка...")
         scheduler.shutdown(wait=False)
         await web_runner.cleanup()
         await bot.session.close()
-        logger.info("✅ Бот остановлен")
+        logger.info("✅ Остановлен")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
