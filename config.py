@@ -65,6 +65,11 @@ ACCESS_LIMITS: dict[str, dict[str, int]] = {
     "vip": {"max_models": 999, "min_interval": 15},
 }
 
+# --- Mini App -----------------------------------------------------------------
+_render_base = _env("RENDER_EXTERNAL_URL", "").rstrip("/")
+WEBAPP_BASE: str = _env("WEBAPP_BASE", _render_base or "https://kufar-bot-i9w9.onrender.com").rstrip("/")
+WEBAPP_URL: str = f"{WEBAPP_BASE}/app"
+
 # --- Rate limiting бота ------------------------------------------------------
 COMMAND_RATE_LIMIT_PER_MIN: int = _env_int("COMMAND_RATE_LIMIT_PER_MIN", 10)
 

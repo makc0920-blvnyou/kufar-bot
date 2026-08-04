@@ -5,10 +5,11 @@ import sys
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
-from config import BOT_TOKEN, CHECK_LOOP_SECONDS
+from config import BOT_TOKEN, CHECK_LOOP_SECONDS, WEBAPP_URL
 from database.db import init_db
 from bot.middlewares.auth import AuthMiddleware, ThrottlingMiddleware
 from scheduler.manager import check_all_users
@@ -30,6 +31,19 @@ async def init_web_server() -> web.AppRunner:
     app = web.Application()
     app.router.add_get("/health", handle_health)
     app.router.add_get("/", handle_health)
+
+    from webapp import api as webapp_api
+
+    app.router.add_get("/app", webapp_api.index)
+    app.router.add_get("/api/init", webapp_api.api_init)
+    app.router.add_get("/api/settings", webapp_api.api_settings)
+    app.router.add_post("/api/settings/add", webapp_api.api_add)
+    app.router.add_post("/api/settings/update", webapp_api.api_update)
+    app.router.add_post("/api/settings/delete", webapp_api.api_delete)
+    app.router.add_post("/api/settings/toggle", webapp_api.api_toggle)
+    app.router.add_post("/api/settings/pause_all", webapp_api.api_pause_all)
+    app.router.add_post("/api/settings/resume_all", webapp_api.api_resume_all)
+    app.router.add_get("/api/stats", webapp_api.api_stats)
 
     runner = web.AppRunner(app)
     await runner.setup()
@@ -64,6 +78,17 @@ async def main() -> None:
     bot = Bot(token=BOT_TOKEN)
     global _bot
     _bot = bot
+
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text="⚙️ Настройки",
+                web_app=WebAppInfo(url=WEBAPP_URL),
+            )
+        )
+        logger.info(f"✅ Menu button (WebApp): {WEBAPP_URL}")
+    except Exception as e:
+        logger.warning(f"Не удалось установить menu button: {e}")
 
     dp = Dispatcher(storage=MemoryStorage())
     dp.message.middleware(ThrottlingMiddleware(limit_per_min=10))

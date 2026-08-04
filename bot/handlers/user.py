@@ -1,10 +1,10 @@
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message, WebAppInfo
 from loguru import logger
 
 from bot.handlers.settings import show_settings_menu
-from config import ACCESS_LIMITS, DEFAULT_ACCESS_LEVEL, MIN_PRICE_GLOBAL
+from config import ACCESS_LIMITS, DEFAULT_ACCESS_LEVEL, MIN_PRICE_GLOBAL, WEBAPP_URL
 from database.db import (
     MODEL_PRICES,
     add_setting,
@@ -50,7 +50,8 @@ async def cmd_start(message: Message, db_user) -> None:
         "<b>Как начать:</b>\n"
         "1️⃣ Добавьте модель: <code>/add_model iPhone 15 600 1200</code>\n"
         "2️⃣ Смотрите свои модели: <code>/my_models</code>\n"
-        "3️⃣ Настройки: <code>/settings</code>\n\n"
+        "3️⃣ Настройки: <code>/settings</code>\n"
+        "4️⃣ Управление в приложении: <code>/app</code>\n\n"
         "Команды: /help — список всех команд"
     )
 
@@ -59,6 +60,7 @@ async def cmd_start(message: Message, db_user) -> None:
 async def cmd_help(message: Message, db_user) -> None:
     await message.answer(
         "<b>Команды:</b>\n\n"
+        "/app — приложение для управления\n"
         "/settings — меню настроек\n"
         "/add_model — добавить модель для отслеживания\n"
         "/my_models — список моделей\n"
@@ -76,6 +78,25 @@ async def cmd_help(message: Message, db_user) -> None:
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, db_user) -> None:
     await show_settings_menu(message, db_user)
+
+
+@router.message(Command("app"))
+async def cmd_app(message: Message, db_user) -> None:
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 Открыть приложение",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            ]
+        ]
+    )
+    await message.answer(
+        "🎛 <b>Управление в приложении</b>\n\n"
+        "Модели, цены, города, интервалы и пауза — всё в одном окне.",
+        reply_markup=keyboard,
+    )
 
 
 @router.message(Command("add_model"))

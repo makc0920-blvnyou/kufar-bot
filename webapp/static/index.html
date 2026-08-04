@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kufar Monitor</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+:root { color-scheme: light dark; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 12px 14px 32px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--tg-theme-bg-color, #ffffff);
+  color: var(--tg-theme-text-color, #111111);
+  min-height: 100vh;
+}
+.card {
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.card h3 { margin: 0 0 6px; font-size: 15px; }
+.card .row { display: flex; justify-content: space-between; align-items: center; margin: 4px 0; font-size: 13px; color: var(--tg-theme-hint-color, #888); }
+.card .row b { color: var(--tg-theme-text-color, #111); }
+.badge { padding: 2px 8px; border-radius: 20px; font-size: 11px; }
+.badge.on { background: #2fb46322; color: #2fb463; }
+.badge.off { background: #e5393522; color: #e53935; }
+.btn {
+  display: inline-block; border: none; border-radius: 12px;
+  padding: 10px 14px; margin: 4px 4px 4px 0;
+  background: var(--tg-theme-button-color, #2481cc);
+  color: var(--tg-theme-button-text-color, #ffffff);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn.ghost { background: var(--tg-theme-secondary-bg-color, #eee); color: var(--tg-theme-text-color, #111); }
+.btn.danger { background: #e5393533; color: #e53935; }
+.btn.block { display: block; width: 100%; margin: 6px 0; }
+#header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+#header .title { font-size: 18px; font-weight: 700; }
+#userinfo { font-size: 12px; color: var(--tg-theme-hint-color, #888); }
+#toast {
+  position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%);
+  background: var(--tg-theme-hint-color, #555); color: var(--tg-theme-bg-color, #fff);
+  padding: 8px 16px; border-radius: 20px; font-size: 13px;
+  opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 50;
+}
+#toast.show { opacity: 1; }
+#modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,.5);
+  display: none; align-items: flex-end; z-index: 40;
+}
+#modal.open { display: flex; }
+#modal .sheet {
+  background: var(--tg-theme-bg-color, #fff); width: 100%;
+  border-radius: 18px 18px 0 0; padding: 16px 16px 24px;
+  max-height: 88vh; overflow-y: auto;
+}
+label { display: block; font-size: 12px; color: var(--tg-theme-hint-color, #888); margin: 10px 0 4px; }
+input, select {
+  width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid #9994;
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  color: var(--tg-theme-text-color, #111); font-size: 15px;
+}
+.inline { display: flex; gap: 8px; }
+.inline > div { flex: 1; }
+.empty { text-align: center; color: var(--tg-theme-hint-color, #888); padding: 30px 0; font-size: 14px; }
+.center { text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <div>
+    <div class="title">⚙️ Kufar Monitor</div>
+    <div id="userinfo">Загрузка...</div>
+  </div>
+</div>
+
+<div id="actions"></div>
+<div id="rules"></div>
+<div id="empty" class="empty" style="display:none">Правил пока нет.<br>Добавьте первую модель 👇</div>
+
+<div id="toast"></div>
+
+<div id="modal">
+  <div class="sheet">
+    <h2 id="modal-title" style="margin-top:0">Добавить модель</h2>
+    <div id="modal-body"></div>
+    <div class="center" style="margin-top:14px">
+      <button class="btn block" id="modal-save">💾 Сохранить</button>
+      <button class="btn ghost block" id="modal-cancel">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const Telegram = window.Telegram;
+let S = { user:null, limits:{max_models:999,min_interval:300}, settings:[], models:[], minPriceGlobal:95 };
+
+async function api(path, method='GET', body=null) {
+  const opts = { method, headers: { 'X-Telegram-Init-Data': Telegram.WebApp.initData } };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({ ok:false, error:'bad response' }));
+  if (!data.ok) throw new Error(data.error || 'Ошибка');
+  return data;
+}
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function fmtPrice(v) {
+  if (v === null || v === undefined) return '—';
+  return Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 }) + ' BYN';
+}
+
+function render() {
+  const actions = document.getElementById('actions');
+  const rules = document.getElementById('rules');
+  const empty = document.getElementById('empty');
+
+  document.getElementById('userinfo').textContent =
+    `${S.user ? S.user.first_name || S.user.username || S.user.id : ''} · ${S.user ? S.user.access_level : ''} · лимит моделей ${S.limits.max_models}`;
+
+  actions.innerHTML = `
+    <button class="btn block" id="btn-add">➕ Добавить модель</button>
+    <button class="btn ghost block" id="btn-pause">⏸️ Пауза всех</button>
+    <button class="btn ghost block" id="btn-resume">▶️ Возобновить все</button>
+  `;
+
+  if (!S.settings.length) {
+    empty.style.display = 'block';
+    rules.innerHTML = '';
+  } else {
+    empty.style.display = 'none';
+    rules.innerHTML = S.settings.map(s => `
+      <div class="card">
+        <h3>${s.is_active ? '🟢' : '🔴'} ${escapeHtml(s.model)}</h3>
+        <div class="row"><span>Цена</span><b>${fmtPrice(s.min_price)} – ${fmtPrice(s.max_price)}</b></div>
+        <div class="row"><span>Города</span><b>${escapeHtml(s.cities)}</b></div>
+        <div class="row"><span>Интервал</span><b>${s.check_interval} сек</b></div>
+        <div class="row">
+          <span>Фото</span>
+          <button class="btn ghost" data-act="photo" data-id="${s.id}">${s.send_photos ? '✅' : '❌'}</button>
+        </div>
+        <div class="row">
+          <span>Описание</span>
+          <button class="btn ghost" data-act="desc" data-id="${s.id}">${s.show_description ? '✅' : '❌'}</button>
+        </div>
+        <div style="margin-top:6px">
+          <button class="btn ghost" data-act="edit" data-id="${s.id}">✏️ Изменить</button>
+          <button class="btn ${s.is_active ? 'ghost' : ''}" data-act="toggle" data-id="${s.id}">${s.is_active ? '⏸️ Пауза' : '▶️ Пуск'}</button>
+          <button class="btn danger" data-act="del" data-id="${s.id}">🗑</button>
+        </div>
+      </div>`).join('');
+  }
+
+  document.getElementById('btn-add').onclick = openAdd;
+  document.getElementById('btn-pause').onclick = () => api('/api/settings/pause_all','POST',{}).then(() => { toast('Все на паузе'); load(); });
+  document.getElementById('btn-resume').onclick = () => api('/api/settings/resume_all','POST',{}).then(() => { toast('Все активны'); load(); });
+  rules.querySelectorAll('[data-act]').forEach(b => {
+    b.onclick = () => {
+      const s = S.settings.find(x => x.id === Number(b.dataset.id));
+      if (!s) return;
+      if (b.dataset.act === 'edit') openEdit(s);
+      else if (b.dataset.act === 'del') { if (confirm('Удалить правило ' + s.model + '?')) api('/api/settings/delete','POST',{id:s.id}).then(load).catch(e=>toast(e.message)); }
+      else if (b.dataset.act === 'toggle') api('/api/settings/toggle','POST',{id:s.id}).then(load).catch(e=>toast(e.message));
+      else if (b.dataset.act === 'photo') api('/api/settings/update','POST',{id:s.id, send_photos:!s.send_photos}).then(load).catch(e=>toast(e.message));
+      else if (b.dataset.act === 'desc') api('/api/settings/update','POST',{id:s.id, show_description:!s.show_description}).then(load).catch(e=>toast(e.message));
+    };
+  });
+}
+
+function intervalOptions(selected) {
+  const presets = [[15,'15 сек'],[60,'1 мин'],[300,'5 мин'],[1800,'30 мин'],[3600,'1 час'],[86400,'24 часа']];
+  const min = S.limits.min_interval;
+  return presets
+    .filter(p => p[0] >= min)
+    .map(p => `<option value="${p[0]}" ${p[0]===selected?'selected':''}>${p[1]}</option>`).join('')
+    + `<option value="custom" ${!presets.some(p=>p[0]===selected)?'selected':''}>Свой…</option>`;
+}
+
+function modalForm(mode, s) {
+  const body = document.getElementById('modal-body');
+  body.innerHTML = `
+    ${mode==='add' ? `
+      <label>Модель</label>
+      <select id="f-model">
+        ${S.models.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}
+      </select>` : `
+      <label>Модель</label>
+      <input id="f-model" value="${escapeHtml(s.model)}" disabled>`}
+    <div class="inline">
+      <div><label>Мин. цена (BYN)</label><input id="f-min" inputmode="decimal" value="${s.min_price ?? S.minPriceGlobal}"></div>
+      <div><label>Макс. цена</label><input id="f-max" inputmode="decimal" value="${s.max_price ?? ''}" placeholder="без лимита"></div>
+    </div>
+    <label>Города (через запятую)</label>
+    <input id="f-cities" value="${escapeHtml(s.cities || 'Минск')}">
+    <label>Интервал проверки</label>
+    <select id="f-interval">${intervalOptions(s.check_interval)}</select>
+    <div id="custom-wrap" style="display:none"><label>Свой интервал (секунды)</label><input id="f-interval-custom" inputmode="numeric" placeholder=">= ${S.limits.min_interval}"></div>
+  `;
+  document.getElementById('f-interval').onchange = e => {
+    document.getElementById('custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
+  };
+}
+
+function openModal(title) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+function openAdd() {
+  if (S.settings.length >= S.limits.max_models) { toast(`Лимит: ${S.limits.max_models} моделей`); return; }
+  modalForm('add', { min_price: S.minPriceGlobal, max_price: null, cities: 'Минск', check_interval: S.limits.min_interval });
+  openModal('➕ Добавить модель');
+  document.getElementById('modal-save').onclick = async () => {
+    try {
+      const interval = document.getElementById('f-interval').value;
+      const check_interval = interval === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(interval);
+      const body = {
+        model: document.getElementById('f-model').value,
+        min_price: document.getElementById('f-min').value,
+        max_price: document.getElementById('f-max').value || null,
+        cities: document.getElementById('f-cities').value,
+        check_interval
+      };
+      await api('/api/settings/add','POST',body);
+      toast('✅ Добавлено');
+      closeModal(); load();
+    } catch (e) { toast('❌ ' + e.message); }
+  };
+  document.getElementById('modal-cancel').onclick = closeModal;
+}
+
+function openEdit(s) {
+  modalForm('edit', s);
+  openModal('✏️ ' + s.model);
+  document.getElementById('modal-save').onclick = async () => {
+    try {
+      const interval = document.getElementById('f-interval').value;
+      const body = { id: s.id,
+        min_price: document.getElementById('f-min').value,
+        max_price: document.getElementById('f-max').value || null,
+        cities: document.getElementById('f-cities').value,
+        check_interval: interval === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(interval)
+      };
+      await api('/api/settings/update','POST',body);
+      toast('✅ Сохранено');
+      closeModal(); load();
+    } catch (e) { toast('❌ ' + e.message); }
+  };
+  document.getElementById('modal-cancel').onclick = closeModal;
+}
+
+async function load() {
+  try {
+    const [init, data] = await Promise.all([api('/api/init'), api('/api/settings')]);
+    S.user = init.user; S.limits = init.limits;
+    S.settings = data.settings; S.models = data.models; S.minPriceGlobal = data.min_price_global;
+    render();
+  } catch (e) {
+    document.getElementById('userinfo').textContent = '❌ ' + e.message;
+    document.getElementById('rules').innerHTML = '<div class="empty">Ошибка авторизации.<br>Откройте через кнопку бота в Telegram.</div>';
+  }
+}
+
+Telegram.WebApp.ready();
+Telegram.WebApp.expand();
+load();
+</script>
+</body>
+</html>
