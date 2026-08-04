@@ -58,9 +58,14 @@ DEFAULT_LIMIT_MODELS: list[str] = sorted(MODEL_PRICES.keys())
 
 
 def _normalize_db_url(url: str) -> str:
-    """Neon отдаёт postgresql:// — переводим на asyncpg-драйвер."""
-    if url.startswith("postgresql://") and "+asyncpg" not in url:
-        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    """Neon отдаёт postgresql:// с sslmode — переводим на asyncpg (SSL через connect_args)."""
+    if url.startswith("postgresql://"):
+        if "+asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if "?sslmode=require" in url:
+            url = url.replace("?sslmode=require", "")
+        elif "&sslmode=require" in url:
+            url = url.replace("&sslmode=require", "")
     return url
 
 
@@ -68,6 +73,7 @@ engine = create_async_engine(
     _normalize_db_url(DATABASE_URL),
     echo=False,
     pool_pre_ping=True,
+    connect_args={"ssl": "require"} if DATABASE_URL.startswith("postgresql://") else {},
 )
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
