@@ -18,6 +18,7 @@ from database.db import (
     record_notification,
     save_listing,
 )
+from database.locations import REGION_NAMES
 from parser.kufar import fetch_listings
 from services.notification import send_listing_to_user
 
@@ -41,6 +42,30 @@ async def _cached_fetch() -> list[dict[str, Any]]:
     return listings
 
 
+def _city_matches(city_str: str, selected: list[str]) -> bool:
+    """Точный матчинг города/района/региона.
+
+    city_str от Куфара вида «Минск», «Минск, Ленинский», «Брестская область, Брест».
+    Токен «Брест» не должен матчить «Брестская область, Барановичи».
+    """
+    parts = [p.strip() for p in city_str.split(",")]
+    region = parts[0] if parts else ""
+    area = parts[1] if len(parts) > 1 else ""
+
+    for c in selected:
+        if not c:
+            continue
+        c = c.strip()
+        if c == region or (area and c == area):
+            return True
+        if c in REGION_NAMES:
+            continue  # выбран другой регион
+        # случай, когда город = только регион (напр. «Минск»), а выбор = часть области
+        if not area and c in region:
+            return True
+    return False
+
+
 def match_setting(listing: dict[str, Any], setting) -> bool:
     price = listing.get("price_raw")
     if price is None:
@@ -59,10 +84,9 @@ def match_setting(listing: dict[str, Any], setting) -> bool:
     if target and target not in model and target not in title:
         return False
 
-    cities = [c.strip().lower() for c in (setting.cities or "").split(",") if c.strip()]
+    cities = [c.strip() for c in (setting.cities or "").split(",") if c.strip()]
     if cities:
-        city = (listing.get("city") or "").lower()
-        if not any(c in city for c in cities):
+        if not _city_matches((listing.get("city") or "").strip(), cities):
             return False
 
     return True

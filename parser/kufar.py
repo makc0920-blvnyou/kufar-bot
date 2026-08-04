@@ -83,15 +83,6 @@ def _extract_items(data: dict[str, Any]) -> list[dict[str, Any]]:
     return result
 
 
-def _is_minsk(ad: dict[str, Any]) -> bool:
-    for param in ad.get("ad_parameters", []):
-        if param.get("p") == "region":
-            val = param.get("vl") or ""
-            if isinstance(val, str) and val.strip() == "Минск":
-                return True
-    return False
-
-
 def _extract_price(ad: dict[str, Any]) -> str:
     calculator = ad.get("calculator", [])
     price_map = {e["currency"]: e["price"] for e in calculator if e.get("price")}
@@ -189,8 +180,6 @@ def _is_private(raw: dict[str, Any]) -> bool:
 
 
 def parse_listing_raw(raw: dict[str, Any]) -> dict[str, Any] | None:
-    if not _is_minsk(raw):
-        return None
     if not _is_private(raw):
         return None
 

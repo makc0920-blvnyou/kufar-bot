@@ -131,6 +131,25 @@ textarea { min-height: 90px; resize: vertical; }
 .inline > div { flex: 1; }
 
 .empty { text-align: center; color: var(--tg-theme-hint-color, #888); padding: 40px 10px; font-size: 14px; }
+.city-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-text-color, #fff);
+  padding: 6px 10px; border-radius: 14px; font-size: 13px;
+}
+.chip:hover { cursor: pointer; }
+.btn.ghost {
+  background: transparent; border: 1px solid var(--tg-theme-button-color, #2481cc);
+  color: var(--tg-theme-button-color, #2481cc);
+}
+.btn.ghost.block { width: 100%; margin: 6px 0; }
+.picker-list { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; }
+.btn.row {
+  text-align: left; width: 100%; justify-content: flex-start; font-size: 14px;
+  background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+  color: var(--tg-theme-text-color, #111); border: 1px solid var(--tg-theme-section-separator-color, #eee);
+}
+.btn.row.sel { border-color: var(--tg-theme-button-color, #2481cc); color: var(--tg-theme-button-color, #2481cc); }
 .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -216,7 +235,7 @@ textarea { min-height: 90px; resize: vertical; }
 
 <script>
 const Telegram = window.Telegram;
-let S = { user:null, limits:{max_models:999,min_interval:300}, settings:[], models:[], minPriceGlobal:95, saved:[], stats:null, adminUsers:[], adminDash:null };
+let S = { user:null, limits:{max_models:999,min_interval:300}, settings:[], models:[], minPriceGlobal:95, saved:[], stats:null, adminUsers:[], adminDash:null, locations:{} };
 let tab = 'models';
 let adminQuery = '';
 
@@ -322,7 +341,40 @@ function renderModels() {
   });
 }
 
+/* ============================ ФОРМА МОДЕЛИ + ПИКЕР ГОРОДОВ ============================ */
+
+let citySel = [];
+let formMode = 'add';
+let formSetting = null;
+let formDraft = null;
+let pickerRegion = null;
+
+function parseCities(cs) { return String(cs || '').split(',').map(s => s.trim()).filter(Boolean); }
+
+function captureRuleForm() {
+  return {
+    min: (document.getElementById('f-min') || {}).value ?? '',
+    max: (document.getElementById('f-max') || {}).value ?? '',
+    interval: (document.getElementById('f-interval') || {}).value ?? '',
+    intervalCustom: (document.getElementById('f-interval-custom') || {}).value ?? '',
+  };
+}
+
+function renderCityBox() {
+  const box = document.getElementById('city-box');
+  if (!box) return;
+  const items = citySel.map(c =>
+    `<span class="chip" data-rm="${esc(c)}">${esc(c)} ✕</span>`).join('');
+  box.innerHTML = items
+    ? `<div class="city-chips">${items}</div>`
+    : '<div class="m muted">Города не выбраны — объявления не придут. Выберите хотя бы один.</div>';
+  box.querySelectorAll('[data-rm]').forEach(el => {
+    el.onclick = () => { citySel = citySel.filter(c => c !== el.dataset.rm); renderCityBox(); };
+  });
+}
+
 function modalForm(mode, s) {
+  const d = formDraft || {};
   return `
     ${mode==='add' ? `
       <label>Модель</label>
@@ -332,62 +384,125 @@ function modalForm(mode, s) {
       <label>Модель</label>
       <input id="f-model" value="${esc(s.model)}" disabled>`}
     <div class="inline">
-      <div><label>Мин. цена (BYN)</label><input id="f-min" inputmode="decimal" value="${s.min_price ?? S.minPriceGlobal}"></div>
-      <div><label>Макс. цена</label><input id="f-max" inputmode="decimal" value="${s.max_price ?? ''}" placeholder="без лимита"></div>
+      <div><label>Мин. цена (BYN)</label><input id="f-min" inputmode="decimal" value="${d.min ?? s.min_price ?? S.minPriceGlobal}"></div>
+      <div><label>Макс. цена</label><input id="f-max" inputmode="decimal" value="${d.max ?? s.max_price ?? ''}" placeholder="без лимита"></div>
     </div>
-    <label>Города (через запятую)</label>
-    <input id="f-cities" value="${esc(s.cities || 'Минск')}">
+    <label>📍 Города</label>
+    <div id="city-box"></div>
+    <button class="btn ghost block" id="btn-cities" style="margin-bottom:10px">📍 Выбрать города</button>
     <label>Интервал проверки</label>
-    <select id="f-interval">${intervalOptions(s.check_interval)}</select>
-    <div id="custom-wrap" style="display:none"><label>Свой интервал (сек), мин ${S.limits.min_interval}</label><input id="f-interval-custom" inputmode="numeric" placeholder="${S.limits.min_interval}"></div>
+    <select id="f-interval">${intervalOptions(d.interval ?? s.check_interval)}</select>
+    <div id="custom-wrap" style="display:none"><label>Свой интервал (сек), мин ${S.limits.min_interval}</label><input id="f-interval-custom" inputmode="numeric" value="${d.intervalCustom ?? ''}" placeholder="${S.limits.min_interval}"></div>
   `;
+}
+
+function bindRuleForm() {
+  renderCityBox();
+  document.getElementById('btn-cities').onclick = openCityPicker;
+  document.getElementById('f-interval').onchange = e => {
+    document.getElementById('custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
+  };
+  if ((document.getElementById('f-interval').value || '') === 'custom') {
+    document.getElementById('custom-wrap').style.display = 'block';
+  }
+  document.getElementById('s-save').onclick = async () => {
+    const intSel = document.getElementById('f-interval').value;
+    try {
+      const body = {
+        model: formMode === 'add' ? document.getElementById('f-model').value : formSetting.model,
+        min_price: document.getElementById('f-min').value,
+        max_price: document.getElementById('f-max').value || null,
+        cities: citySel.join(', '),
+        check_interval: intSel === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(intSel)
+      };
+      if (formMode === 'edit') body.id = formSetting.id;
+      await api(formMode === 'add' ? '/api/settings/add' : '/api/settings/update', 'POST', body);
+      toast('✅ ' + (formMode === 'add' ? 'Добавлено' : 'Сохранено')); closeSheet(); load();
+    } catch (e) { toast('❌ ' + e.message); }
+  };
+}
+
+function renderRuleForm() {
+  const s = formSetting;
+  openSheet(formMode === 'add' ? '➕ Добавить модель' : '✏️ ' + s.model,
+    modalForm(formMode, s),
+    '<button class="btn block" id="s-save">💾 Сохранить</button>');
+  formDraft = null;
+  bindRuleForm();
 }
 
 function openAdd() {
   const limit = S.limits.max_models;
   if (limit !== null && limit !== undefined && S.settings.length >= limit) { toast('Лимит моделей: ' + limit); return; }
-  openSheet('➕ Добавить модель',
-    modalForm('add', { min_price: S.minPriceGlobal, max_price: null, cities: 'Минск', check_interval: S.limits.min_interval }),
-    '<button class="btn block" id="s-save">💾 Сохранить</button>');
-  document.getElementById('s-save').onclick = async () => {
-    const intSel = document.getElementById('f-interval').value;
-    try {
-      const body = {
-        model: document.getElementById('f-model').value,
-        min_price: document.getElementById('f-min').value,
-        max_price: document.getElementById('f-max').value || null,
-        cities: document.getElementById('f-cities').value,
-        check_interval: intSel === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(intSel)
-      };
-      await api('/api/settings/add','POST',body);
-      toast('✅ Добавлено'); closeSheet(); load();
-    } catch (e) { toast('❌ ' + e.message); }
-  };
-  document.getElementById('f-interval').onchange = e => {
-    document.getElementById('custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
-  };
+  formMode = 'add';
+  formSetting = { min_price: S.minPriceGlobal, max_price: null, cities: 'Минск', check_interval: S.limits.min_interval };
+  citySel = parseCities('Минск');
+  renderRuleForm();
 }
 
 function openEdit(s) {
-  openSheet('✏️ ' + s.model,
-    modalForm('edit', s),
-    '<button class="btn block" id="s-save">💾 Сохранить</button>');
-  document.getElementById('s-save').onclick = async () => {
-    const intSel = document.getElementById('f-interval').value;
-    try {
-      const body = { id: s.id,
-        min_price: document.getElementById('f-min').value,
-        max_price: document.getElementById('f-max').value || null,
-        cities: document.getElementById('f-cities').value,
-        check_interval: intSel === 'custom' ? Number(document.getElementById('f-interval-custom').value) : Number(intSel)
-      };
-      await api('/api/settings/update','POST',body);
-      toast('✅ Сохранено'); closeSheet(); load();
-    } catch (e) { toast('❌ ' + e.message); }
+  formMode = 'edit';
+  formSetting = s;
+  citySel = parseCities(s.cities);
+  renderRuleForm();
+}
+
+function openCityPicker() {
+  formDraft = captureRuleForm();
+  pickerRegion = null;
+  renderCityPicker();
+}
+
+function regionsForList() {
+  return Object.entries(S.locations || {});
+}
+
+function renderCityPicker() {
+  if (pickerRegion === null) {
+    const regs = regionsForList();
+    openSheet('📍 Выбор города',
+      `<div class="m muted" style="margin-bottom:8px">Сначала регион, затем города внутри него</div>
+       <div class="picker-list">${regs.map(([name, r]) => {
+         const n = citySel.includes(name) ? citySel.length - 1 : 0;
+         const cnt = Object.values(r.areas || {}).filter(a => citySel.includes(a)).length;
+         const mark = citySel.includes(name) ? ` · ✅ вся область` : (cnt ? ` · выбрано ${cnt}` : '');
+         return `<button class="btn ghost row" data-reg="${esc(name)}">${esc(name)}${mark}</button>`;
+       }).join('')}</div>`,
+      '<button class="btn ghost block" id="p-back">◀️ К форме</button>');
+    document.querySelectorAll('[data-reg]').forEach(b => {
+      b.onclick = () => { pickerRegion = b.dataset.reg; renderCityPicker(); };
+    });
+    document.getElementById('p-back').onclick = () => { renderRuleForm(); };
+    return;
+  }
+  const r = S.locations[pickerRegion];
+  const areas = Object.keys(r.areas || {}).sort();
+  const wholeSelected = citySel.includes(pickerRegion);
+  openSheet('📍 ' + pickerRegion,
+    `<div class="picker-list">
+       <button class="btn ${wholeSelected ? '' : 'ghost'} block" id="p-whole" style="margin-bottom:8px">
+         ${wholeSelected ? '✅' : '○'} Вся ${pickerRegion}
+       </button>
+       ${areas.map(a =>
+         `<button class="btn ghost row ${citySel.includes(a) ? 'sel' : ''}" data-area="${esc(a)}">${citySel.includes(a) ? '✅ ' : '· '}${esc(a)}</button>`
+       ).join('')}
+     </div>`,
+    `<button class="btn ghost block" id="p-back" style="margin-bottom:8px">◀️ Назад</button>
+     <button class="btn block" id="p-ok">✅ Готово (${citySel.length})</button>`);
+  document.getElementById('p-whole').onclick = () => {
+    if (wholeSelected) citySel = citySel.filter(c => c !== pickerRegion);
+    else { citySel = citySel.filter(c => c !== pickerRegion); citySel.push(pickerRegion); }
+    renderCityPicker();
   };
-  document.getElementById('f-interval').onchange = e => {
-    document.getElementById('custom-wrap').style.display = e.target.value === 'custom' ? 'block' : 'none';
-  };
+  document.querySelectorAll('[data-area]').forEach(b => {
+    b.onclick = () => {
+      const a = b.dataset.area;
+      citySel = citySel.includes(a) ? citySel.filter(c => c !== a) : [...citySel, a];
+      renderCityPicker();
+    };
+  });
+  document.getElementById('p-back').onclick = () => { pickerRegion = null; renderCityPicker(); };
+  document.getElementById('p-ok').onclick = () => { renderRuleForm(); };
 }
 
 /* ============================ ИЗБРАННОЕ ============================ */
@@ -664,9 +779,10 @@ function showUserStats(st) {
 
 async function load() {
   try {
-    const [init, data] = await Promise.all([api('/api/init'), api('/api/settings')]);
+    const [init, data, loc] = await Promise.all([api('/api/init'), api('/api/settings'), api('/api/locations')]);
     S.user = init.user; S.limits = init.limits;
     S.settings = data.settings; S.models = data.models; S.minPriceGlobal = data.min_price_global;
+    S.locations = loc.locations || {};
 
     if (S.user.access_level === 'pending') {
       document.getElementById('tabs').style.display = 'none';

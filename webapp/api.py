@@ -32,6 +32,7 @@ from database.db import (
     set_access_level,
     update_setting,
 )
+from database.locations import LOCATIONS
 from webapp.auth import extract_user, validate_init_data
 
 WEBAPP_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -147,6 +148,10 @@ async def api_settings(request: web.Request) -> web.Response:
         limits=_limits_for(db_user.access_level),
         min_price_global=MIN_PRICE_GLOBAL,
     )
+
+
+async def api_locations(request: web.Request) -> web.Response:
+    return _ok(locations=LOCATIONS)
 
 
 async def api_add(request: web.Request) -> web.Response:

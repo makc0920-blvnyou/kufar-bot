@@ -36,6 +36,7 @@ async def init_web_server() -> web.AppRunner:
     app.router.add_get("/app", webapp_api.index)
     app.router.add_get("/api/init", webapp_api.api_init)
     app.router.add_get("/api/settings", webapp_api.api_settings)
+    app.router.add_get("/api/locations", webapp_api.api_locations)
     app.router.add_post("/api/settings/add", webapp_api.api_add)
     app.router.add_post("/api/settings/update", webapp_api.api_update)
     app.router.add_post("/api/settings/delete", webapp_api.api_delete)

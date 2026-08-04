@@ -42,6 +42,19 @@ def _find_model_name(arg: str) -> str | None:
     return None
 
 
+def _app_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🚀 Открыть приложение",
+                    web_app=WebAppInfo(url=WEBAPP_URL),
+                )
+            ]
+        ]
+    )
+
+
 @router.message(Command("start"))
 async def cmd_start(message: Message, db_user) -> None:
     from config import PENDING_LEVEL
@@ -56,56 +69,39 @@ async def cmd_start(message: Message, db_user) -> None:
 
     await message.answer(
         "👋 <b>Kufar iPhone Monitor</b>\n\n"
-        "🤖 Мониторю iPhone на kufar.by и присылаю предложения по вашему лимиту.\n\n"
-        "<b>Как начать:</b>\n"
-        "1️⃣ Добавьте модель: <code>/add_model iPhone 15 600 1200</code>\n"
-        "2️⃣ Смотрите свои модели: <code>/my_models</code>\n"
-        "3️⃣ Настройки: <code>/settings</code>\n"
-        "4️⃣ Управление в приложении: <code>/app</code>\n\n"
-        "Команды: /help — список всех команд"
+        "Мониторю iPhone на kufar.by и присылаю только то, что вам нужно:\n"
+        "по модели, цене и городу.\n\n"
+        "🎛 <b>Всё управление — в удобном приложении</b> 👇\n"
+        "модели, города, цены, интервалы, статистика и избранное в одном окне.",
+        reply_markup=_app_keyboard(),
     )
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message, db_user) -> None:
     await message.answer(
-        "<b>Команды:</b>\n\n"
-        "/app — приложение для управления\n"
-        "/settings — меню настроек\n"
-        "/add_model — добавить модель для отслеживания\n"
-        "/my_models — список моделей\n"
-        "/remove_model — удалить модель\n"
-        "/pause — остановить уведомления\n"
-        "/resume — возобновить уведомления\n"
-        "/check — принудительная проверка\n"
-        "/saved — избранное\n"
-        "/stats — моя статистика\n"
-        "/help — помощь",
-        disable_web_page_preview=True,
+        "🎛 <b>Управление — в приложении</b>\n\n"
+        "Там можно добавить модель, выбрать города, цены, интервал "
+        "и смотреть статистику без команд.",
+        reply_markup=_app_keyboard(),
     )
 
 
 @router.message(Command("settings"))
 async def cmd_settings(message: Message, db_user) -> None:
+    await message.answer(
+        "🎛 Настройки удобнее в приложении 👇",
+        reply_markup=_app_keyboard(),
+    )
     await show_settings_menu(message, db_user)
 
 
 @router.message(Command("app"))
 async def cmd_app(message: Message, db_user) -> None:
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="🚀 Открыть приложение",
-                    web_app=WebAppInfo(url=WEBAPP_URL),
-                )
-            ]
-        ]
-    )
     await message.answer(
         "🎛 <b>Управление в приложении</b>\n\n"
         "Модели, цены, города, интервалы и пауза — всё в одном окне.",
-        reply_markup=keyboard,
+        reply_markup=_app_keyboard(),
     )
 
 
@@ -192,7 +188,11 @@ async def cmd_add_model(message: Message, command: CommandObject, db_user) -> No
 async def cmd_my_models(message: Message, db_user) -> None:
     settings = await get_settings_for_user(db_user.id)
     if not settings:
-        await message.answer("📭 У вас нет отслеживаемых моделей. Добавьте: <code>/add_model iPhone 15 600 1200</code>")
+        await message.answer(
+            "📭 У вас нет отслеживаемых моделей.\n"
+            "Добавьте через приложение 👇 или командой <code>/add_model iPhone 15 600 1200</code>",
+            reply_markup=_app_keyboard(),
+        )
         return
 
     lines = ["📋 <b>Ваши модели</b>\n"]
@@ -205,8 +205,8 @@ async def cmd_my_models(message: Message, db_user) -> None:
             f"   📍 {s.cities}\n"
             f"   ⏱ {s.check_interval} сек"
         )
-    lines.append("\nУдалить: <code>/remove_model НАЗВАНИЕ</code>")
-    await message.answer("\n\n".join(lines))
+    lines.append("\nРедактировать удобнее в приложении 👇")
+    await message.answer("\n\n".join(lines), reply_markup=_app_keyboard())
 
 
 @router.message(Command("remove_model"))
