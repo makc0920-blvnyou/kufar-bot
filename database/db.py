@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from loguru import logger
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from config import DATABASE_URL, PENDING_LEVEL, PREMIUM_DURATION_DAYS
@@ -82,6 +82,17 @@ SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Лёгкая миграция: новая колонка в существующей таблице
+    is_pg = engine.dialect.name == "postgresql"
+    if is_pg:
+        ddl = "ALTER TABLE users ADD COLUMN IF NOT EXISTS premium_expires_at TIMESTAMP WITH TIME ZONE"
+    else:
+        ddl = "ALTER TABLE users ADD COLUMN premium_expires_at DATETIME"
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(ddl))
+    except Exception as e:
+        logger.warning(f"Миграция premium_expires_at не прошла (или колонка уже есть): {e}")
     logger.info(f"БД инициализирована: {_normalize_db_url(DATABASE_URL)}")
 
 
