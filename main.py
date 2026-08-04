@@ -121,8 +121,30 @@ async def main() -> None:
         replace_existing=True,
         max_instances=1,
     )
+
+    from database.db import downgrade_expired_premiums
+
+    async def premium_expiry_tick() -> None:
+        try:
+            n = await downgrade_expired_premiums()
+            if n:
+                logger.info(f"Premium даунгрейд: {n} пользователей → free")
+        except Exception as e:
+            logger.exception(f"Ошибка premium_expiry_tick: {e}")
+
+    scheduler.add_job(
+        premium_expiry_tick,
+        trigger="cron",
+        hour=4,
+        minute=0,
+        id="premium_expiry",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info(f"✅ Планировщик: цикл каждые {CHECK_LOOP_SECONDS} сек")
+    logger.info(f"✅ Планировщик: цикл каждые {CHECK_LOOP_SECONDS} сек, даунгрейд premium 04:00 UTC")
+
+    # Сразу при старте чистим уже истёкшие premium
+    asyncio.create_task(premium_expiry_tick())
 
     logger.info("🚀 Бот запущен. Ожидание обновлений...")
     try:

@@ -56,13 +56,20 @@ MAX_ITEMS_PER_CHECK: int = _env_int("MAX_ITEMS_PER_CHECK", 30)
 DATABASE_PATH: str = _env("DATABASE_PATH", "data/listings.db")
 
 # --- Доступ ------------------------------------------------------------------
-ALLOW_SELF_REGISTER: bool = _env("ALLOW_SELF_REGISTER", "true").lower() == "true"
+# Новые пользователи получают статус "pending" и ждут одобрения админом.
+PENDING_LEVEL: str = "pending"
+PREMIUM_DURATION_DAYS: int = _env_int("PREMIUM_DURATION_DAYS", 30)
 DEFAULT_ACCESS_LEVEL: str = _env("DEFAULT_ACCESS_LEVEL", "free")
 
-ACCESS_LIMITS: dict[str, dict[str, int]] = {
-    "free": {"max_models": 1, "min_interval": 300},
-    "premium": {"max_models": 10, "min_interval": 60},
-    "vip": {"max_models": 999, "min_interval": 15},
+ACCESS_LIMITS: dict[str, dict[str, int | None]] = {
+    # free: 1 модель, проверка раз в минуту
+    "free": {"max_models": 1, "min_interval": 60},
+    # premium: безлимит моделей, мин. интервал 15 сек, выдаётся на PREMIUM_DURATION_DAYS
+    "premium": {"max_models": None, "min_interval": 15},
+    # vip: как premium (для особых случаев)
+    "vip": {"max_models": None, "min_interval": 15},
+    # admin: безлимит
+    "admin": {"max_models": None, "min_interval": 15},
 }
 
 # --- Mini App -----------------------------------------------------------------

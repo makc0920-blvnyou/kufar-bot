@@ -143,6 +143,12 @@ def build_admin_menu() -> InlineKeyboardMarkup:
     )
 
 
+def _user_state_icon(u) -> str:
+    if u.access_level == "pending":
+        return "⏳"
+    return "🟢" if u.is_active and not u.is_blocked else "🔴"
+
+
 def build_users_list(users, page: int) -> InlineKeyboardMarkup:
     per_page = 6
     total = len(users)
@@ -152,7 +158,7 @@ def build_users_list(users, page: int) -> InlineKeyboardMarkup:
 
     buttons: list[list[InlineKeyboardButton]] = []
     for u in chunk:
-        state = "🟢" if u.is_active and not u.is_blocked else "🔴"
+        state = _user_state_icon(u)
         name = u.username or u.first_name or str(u.id)
         buttons.append(
             [InlineKeyboardButton(text=f"{state} {name}", callback_data=f"aui:{u.id}")]
@@ -176,14 +182,18 @@ def build_user_actions(user) -> InlineKeyboardMarkup:
         if not user.is_blocked
         else InlineKeyboardButton(text="✅ Разблокировать", callback_data=f"aui:unb:{uid}")
     )
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(text="💎 premium", callback_data=f"aui:lvl:{uid}:premium"),
-                InlineKeyboardButton(text="👑 vip", callback_data=f"aui:lvl:{uid}:vip"),
-            ],
-            [InlineKeyboardButton(text="📊 Статистика", callback_data=f"aui:stat:{uid}")],
-            [block_btn],
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="am:u")],
+    rows: list[list[InlineKeyboardButton]] = []
+    if user.access_level == "pending":
+        rows.append(
+            [InlineKeyboardButton(text="✅ Одобрить (free)", callback_data=f"aui:appr:{uid}")]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(text="💎 premium", callback_data=f"aui:lvl:{uid}:premium"),
+            InlineKeyboardButton(text="👑 vip", callback_data=f"aui:lvl:{uid}:vip"),
         ]
     )
+    rows.append([InlineKeyboardButton(text="📊 Статистика", callback_data=f"aui:stat:{uid}")])
+    rows.append([block_btn])
+    rows.append([InlineKeyboardButton(text="◀️ Назад", callback_data="am:u")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)

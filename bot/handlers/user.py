@@ -44,6 +44,16 @@ def _find_model_name(arg: str) -> str | None:
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, db_user) -> None:
+    from config import PENDING_LEVEL
+
+    if db_user.access_level == PENDING_LEVEL:
+        await message.answer(
+            "⏳ <b>Запрос на доступ отправлен</b>\n\n"
+            "Администратор рассмотрит вашу заявку.\n"
+            "Как только доступ будет выдан — напишите <code>/start</code> снова."
+        )
+        return
+
     await message.answer(
         "👋 <b>Kufar iPhone Monitor</b>\n\n"
         "🤖 Мониторю iPhone на kufar.by и присылаю предложения по вашему лимиту.\n\n"
@@ -116,7 +126,7 @@ async def cmd_add_model(message: Message, command: CommandObject, db_user) -> No
 
     limits = _limits_for(db_user)
     current_count = await count_settings_for_user(db_user.id)
-    if current_count >= limits["max_models"]:
+    if limits["max_models"] is not None and current_count >= limits["max_models"]:
         await message.answer(
             f"❌ Достигнут лимит моделей для вашего уровня «{db_user.access_level}»: "
             f"{limits['max_models']}. Обратитесь к администратору за повышением."

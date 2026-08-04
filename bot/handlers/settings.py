@@ -118,7 +118,7 @@ async def cb_pick_model(callback: CallbackQuery, db_user) -> None:
     model = models[idx]
 
     limits = _limits_for(db_user)
-    if await count_settings_for_user(db_user.id) >= limits["max_models"]:
+    if limits["max_models"] is not None and await count_settings_for_user(db_user.id) >= limits["max_models"]:
         await callback.answer(
             f"Лимит моделей для «{db_user.access_level}»: {limits['max_models']}",
             show_alert=True,

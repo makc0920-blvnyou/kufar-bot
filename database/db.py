@@ -1,12 +1,12 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from loguru import logger
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from config import DATABASE_URL
+from config import DATABASE_URL, PENDING_LEVEL, PREMIUM_DURATION_DAYS
 from database.models import (
     Base,
     HiddenModel,
@@ -96,7 +96,7 @@ async def ensure_user(
     user_id: int,
     username: Optional[str] = None,
     first_name: Optional[str] = None,
-    access_level: str = "free",
+    access_level: str = PENDING_LEVEL,
     is_admin: bool = False,
 ) -> User:
     async with SessionLocal() as session:
@@ -119,6 +119,13 @@ async def ensure_user(
         return user
 
 
+def _apply_premium_expiry(user: User, level: str) -> None:
+    if level == "premium":
+        user.premium_expires_at = datetime.now(timezone.utc) + timedelta(days=PREMIUM_DURATION_DAYS)
+    else:
+        user.premium_expires_at = None
+
+
 async def grant_access(user_id: int, access_level: str = "free") -> User:
     async with SessionLocal() as session:
         user = await session.get(User, user_id)
@@ -129,6 +136,7 @@ async def grant_access(user_id: int, access_level: str = "free") -> User:
             user.is_blocked = False
             user.is_active = True
             user.access_level = access_level
+        _apply_premium_expiry(user, access_level)
         await session.commit()
         await session.refresh(user)
         return user
@@ -140,6 +148,7 @@ async def revoke_access(user_id: int) -> None:
         if user is not None:
             user.is_blocked = True
             user.is_active = False
+            user.premium_expires_at = None
             await session.commit()
 
 
@@ -148,7 +157,37 @@ async def set_access_level(user_id: int, level: str) -> None:
         user = await session.get(User, user_id)
         if user is not None:
             user.access_level = level
+            _apply_premium_expiry(user, level)
             await session.commit()
+
+
+async def list_pending_users() -> list[User]:
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(User).where(User.access_level == PENDING_LEVEL).order_by(User.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+async def downgrade_expired_premiums() -> int:
+    """Возвращает счётчик юзеров, чей premium истёк (→ free)."""
+    now = datetime.now(timezone.utc)
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(User).where(
+                User.access_level == "premium",
+                User.premium_expires_at.is_not(None),
+                User.premium_expires_at < now,
+            )
+        )
+        expired = list(result.scalars().all())
+        for user in expired:
+            user.access_level = "free"
+            user.premium_expires_at = None
+        if expired:
+            await session.commit()
+            logger.info(f"Premium истёк, даунгрейд до free: {[u.id for u in expired]}")
+        return len(expired)
 
 
 async def find_user_by_username(username: str) -> Optional[User]:

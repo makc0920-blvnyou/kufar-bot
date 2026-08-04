@@ -5,7 +5,14 @@ from typing import Any
 from aiohttp import web
 from loguru import logger
 
-from config import ADMIN_IDS, ACCESS_LIMITS, BOT_TOKEN, DEFAULT_ACCESS_LEVEL, MIN_PRICE_GLOBAL
+from config import (
+    ADMIN_IDS,
+    ACCESS_LIMITS,
+    BOT_TOKEN,
+    DEFAULT_ACCESS_LEVEL,
+    MIN_PRICE_GLOBAL,
+    PENDING_LEVEL,
+)
 from database.db import (
     DEFAULT_LIMIT_MODELS,
     add_setting,
@@ -38,7 +45,7 @@ def set_bot(bot) -> None:
     BOT = bot
 
 
-def _limits_for(level: str) -> dict[str, int]:
+def _limits_for(level: str) -> dict[str, int | None]:
     return ACCESS_LIMITS.get(level, ACCESS_LIMITS.get(DEFAULT_ACCESS_LEVEL, ACCESS_LIMITS["free"]))
 
 
@@ -50,6 +57,18 @@ async def _require_user(request: web.Request):
         return None, None
     db_user = await get_user(int(user_info["id"]))
     return db_user, user_info
+
+
+async def _require_approved(request: web.Request):
+    """Требует валидного юзера с доступом (не pending)."""
+    db_user, _ = await _require_user(request)
+    if db_user is None:
+        return None, "unauthorized", 401
+    if db_user.is_blocked or not db_user.is_active:
+        return None, "blocked", 403
+    if db_user.access_level == PENDING_LEVEL:
+        return None, "pending", 403
+    return db_user, None, None
 
 
 def _json(data: dict[str, Any], status: int = 200) -> web.Response:
@@ -110,17 +129,18 @@ async def api_init(request: web.Request) -> web.Response:
             "access_level": db_user.access_level,
             "is_blocked": db_user.is_blocked,
             "is_admin": db_user.id in ADMIN_IDS or db_user.access_level == "admin",
+            "premium_expires_at": db_user.premium_expires_at.isoformat()
+            if db_user.premium_expires_at
+            else None,
         },
         limits=_limits_for(db_user.access_level),
     )
 
 
 async def api_settings(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
-    if db_user.is_blocked or not db_user.is_active:
-        return _fail("blocked", 403)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
     return _ok(
         settings=await _serialize_settings(db_user),
         models=DEFAULT_LIMIT_MODELS,
@@ -130,11 +150,9 @@ async def api_settings(request: web.Request) -> web.Response:
 
 
 async def api_add(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
-    if db_user.is_blocked or not db_user.is_active:
-        return _fail("blocked", 403)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     try:
         body = await request.json()
@@ -146,7 +164,7 @@ async def api_add(request: web.Request) -> web.Response:
         return _fail(f"Модель не найдена: {model}")
 
     limits = _limits_for(db_user.access_level)
-    if await count_settings_for_user(db_user.id) >= limits["max_models"]:
+    if limits["max_models"] is not None and await count_settings_for_user(db_user.id) >= limits["max_models"]:
         return _fail(f"Лимит моделей для «{db_user.access_level}»: {limits['max_models']}")
 
     try:
@@ -181,9 +199,9 @@ async def api_add(request: web.Request) -> web.Response:
 
 
 async def api_update(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     try:
         body = await request.json()
@@ -249,9 +267,9 @@ async def api_update(request: web.Request) -> web.Response:
 
 
 async def api_delete(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     try:
         body = await request.json()
@@ -269,9 +287,9 @@ async def api_delete(request: web.Request) -> web.Response:
 
 
 async def api_toggle(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     try:
         body = await request.json()
@@ -288,25 +306,25 @@ async def api_toggle(request: web.Request) -> web.Response:
 
 
 async def api_pause_all(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
     n = await pause_all_for_user(db_user.id, paused=True)
     return _ok(updated=n)
 
 
 async def api_resume_all(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
     n = await pause_all_for_user(db_user.id, paused=False)
     return _ok(updated=n)
 
 
 async def api_stats(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     from services.analytics import build_user_stats
 
@@ -316,9 +334,9 @@ async def api_stats(request: web.Request) -> web.Response:
 # --- Избранное ---------------------------------------------------------------
 
 async def api_saved(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     from database.db import get_listing
     from services.notification import _relative_time
@@ -347,9 +365,9 @@ async def api_saved(request: web.Request) -> web.Response:
 
 
 async def api_saved_remove(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     try:
         body = await request.json()
@@ -363,9 +381,9 @@ async def api_saved_remove(request: web.Request) -> web.Response:
 # --- Принудительная проверка --------------------------------------------------
 
 async def api_check(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     if BOT is None:
         return _fail("бот не готов", 503)
@@ -379,16 +397,16 @@ async def api_check(request: web.Request) -> web.Response:
 # --- Скрытые модели -----------------------------------------------------------
 
 async def api_hidden(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
     return _ok(hidden=await list_hidden_models(db_user.id))
 
 
 async def api_hidden_remove(request: web.Request) -> web.Response:
-    db_user, _ = await _require_user(request)
-    if db_user is None:
-        return _fail("unauthorized", 401)
+    db_user, err, code = await _require_approved(request)
+    if err:
+        return _fail(err, code)
 
     try:
         body = await request.json()
@@ -408,6 +426,8 @@ async def _require_admin(request: web.Request):
         return None, "unauthorized", 401
     if db_user.is_blocked or not db_user.is_active:
         return None, "blocked", 403
+    if db_user.access_level == PENDING_LEVEL:
+        return None, "pending", 403
     is_admin = db_user.id in ADMIN_IDS or db_user.access_level == "admin"
     if not is_admin:
         return None, "forbidden", 403
@@ -415,7 +435,13 @@ async def _require_admin(request: web.Request):
 
 
 def _level_label(level: str) -> str:
-    return {"free": "free", "premium": "💎 premium", "vip": "👑 vip", "admin": "🛠 admin"}.get(level, level)
+    return {
+        "free": "free",
+        "premium": "💎 premium",
+        "vip": "👑 vip",
+        "admin": "🛠 admin",
+        "pending": "⏳ pending",
+    }.get(level, level)
 
 
 async def api_admin_dashboard(request: web.Request) -> web.Response:
@@ -451,8 +477,12 @@ async def api_admin_users(request: web.Request) -> web.Response:
                 "first_name": u.first_name,
                 "access_level": u.access_level,
                 "level_label": _level_label(u.access_level),
+                "is_pending": u.access_level == PENDING_LEVEL,
                 "is_active": u.is_active,
                 "is_blocked": u.is_blocked,
+                "premium_expires_at": u.premium_expires_at.isoformat()
+                if u.premium_expires_at
+                else None,
                 "rules_count": len(rules),
             }
         )
@@ -524,8 +554,8 @@ async def api_admin_grant(request: web.Request) -> web.Response:
 
     try:
         body = await request.json()
-        target = (body.get("target") or "").strip()
-        level = (body.get("level") or "free").strip()
+        target = str(body.get("target") or "").strip()
+        level = str(body.get("level") or "free").strip()
     except json.JSONDecodeError:
         return _fail("bad json")
 

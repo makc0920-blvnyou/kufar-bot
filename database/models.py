@@ -31,7 +31,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     username: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     first_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
-    access_level: Mapped[str] = mapped_column(String(16), default="free")  # free/premium/vip/admin
+    access_level: Mapped[str] = mapped_column(String(16), default="free")  # pending/free/premium/vip/admin
+    premium_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -38,13 +38,19 @@ async def cmd_users(message: Message) -> None:
         return
 
     lines = ["👥 <b>Пользователи</b>\n"]
+    pending = 0
     for u in users:
-        state = "🟢" if u.is_active and not u.is_blocked else "🔴"
+        if u.access_level == "pending":
+            state = "⏳"
+            pending += 1
+        else:
+            state = "🟢" if u.is_active and not u.is_blocked else "🔴"
         access = {
             "free": "free",
             "premium": "💎 premium",
             "vip": "👑 vip",
             "admin": "🛠 admin",
+            "pending": "⏳ pending",
         }.get(u.access_level, u.access_level)
         models_count = len(await __count_models(u.id))
         name = u.username or u.first_name or str(u.id)
@@ -52,6 +58,8 @@ async def cmd_users(message: Message) -> None:
             f"{state} <b>{name}</b>\n"
             f"   ID: <code>{u.id}</code> | {access} | моделей: {models_count}"
         )
+    if pending:
+        lines.insert(1, f"⏳ Ожидают одобрения: {pending}\n")
     await message.answer("\n\n".join(lines))
 
 
@@ -217,12 +225,18 @@ async def cb_admin_user_actions(callback: CallbackQuery, db_user) -> None:
         if target is None:
             await callback.answer("Пользователь не найден.", show_alert=True)
             return
-        state = "🔴 заблокирован" if target.is_blocked else "🟢 активен"
+        if target.access_level == "pending":
+            state = "⏳ ожидает одобрения"
+        elif target.is_blocked:
+            state = "🔴 заблокирован"
+        else:
+            state = "🟢 активен"
         access = {
             "free": "free",
             "premium": "💎 premium",
             "vip": "👑 vip",
             "admin": "🛠 admin",
+            "pending": "⏳ pending",
         }.get(target.access_level, target.access_level)
         name = target.username or target.first_name or str(target.id)
         rules = await get_settings_for_user(uid)
@@ -242,6 +256,18 @@ async def cb_admin_user_actions(callback: CallbackQuery, db_user) -> None:
         target = await get_user(uid)
         if target is not None:
             await edit_message(callback, "🛠 <b>Админ-панель</b>", build_user_actions(target))
+    elif len(parts) == 3 and parts[1] == "appr":
+        await grant_access(int(parts[2]), access_level="free")
+        await callback.answer("✅ Одобрен (free)")
+        try:
+            await callback.message.bot.send_message(
+                int(parts[2]),
+                "✅ <b>Доступ выдан!</b>\n\n"
+                "Можете пользоваться ботом. Добавьте модель: <code>/add_model iPhone 15 600 1200</code>",
+            )
+        except Exception as e:
+            logger.warning(f"Не удалось уведомить о доступе {parts[2]}: {e}")
+        await cb_admin_users(callback, db_user)
     elif len(parts) == 3 and parts[1] == "blk":
         await revoke_access(int(parts[2]))
         await callback.answer("🚫 Заблокирован")

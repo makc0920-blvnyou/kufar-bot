@@ -344,7 +344,8 @@ function modalForm(mode, s) {
 }
 
 function openAdd() {
-  if (S.settings.length >= S.limits.max_models) { toast('Лимит моделей: ' + S.limits.max_models); return; }
+  const limit = S.limits.max_models;
+  if (limit !== null && limit !== undefined && S.settings.length >= limit) { toast('Лимит моделей: ' + limit); return; }
   openSheet('➕ Добавить модель',
     modalForm('add', { min_price: S.minPriceGlobal, max_price: null, cities: 'Минск', check_interval: S.limits.min_interval }),
     '<button class="btn block" id="s-save">💾 Сохранить</button>');
@@ -498,12 +499,16 @@ function renderAdmin() {
       ${S.adminUsers.map(u => `
         <div class="card">
           <div class="user-row">
-            <span class="dot ${(u.is_active && !u.is_blocked) ? 'on' : 'off'}"></span>
+            ${u.is_pending ? '<span class="dot off" style="background:#ff9800"></span>' : `<span class="dot ${(u.is_active && !u.is_blocked) ? 'on' : 'off'}"></span>`}
             <div style="flex:1;min-width:0">
-              <div class="u-name">${esc(u.username || u.first_name || u.id)}</div>
-              <div class="u-meta">ID: ${u.id} · ${esc(u.level_label)} · правил: ${u.rules_count}</div>
+              <div class="u-name">${u.is_pending ? '⏳ ' : ''}${esc(u.username || u.first_name || u.id)}</div>
+              <div class="u-meta">ID: ${u.id} · ${esc(u.level_label)} · правил: ${u.rules_count}
+                ${u.access_level === 'premium' && u.premium_expires_at ? ' · 💎 до ' + new Date(u.premium_expires_at).toLocaleDateString('ru-RU') : ''}
+              </div>
             </div>
-            <button class="btn small ghost" data-au="${u.id}">🛠</button>
+            ${u.is_pending
+              ? '<button class="btn small" data-appr="' + u.id + '">✅ Одобрить</button>'
+              : '<button class="btn small ghost" data-au="' + u.id + '">🛠</button>'}
           </div>
         </div>`).join('')}
       ${S.adminUsers.length ? '' : '<div class="empty">Никого не найдено</div>'}`;
@@ -518,6 +523,14 @@ function renderAdmin() {
   if (q) q.oninput = e => { adminQuery = e.target.value; filterAdmin(); };
   el.querySelectorAll('[data-au]').forEach(b => {
     b.onclick = () => openUser(b.dataset.au);
+  });
+  el.querySelectorAll('[data-appr]').forEach(b => {
+    b.onclick = async () => {
+      try {
+        await api('/api/admin/grant','POST',{ target: b.dataset.appr, level: 'free' });
+        toast('✅ Одобрен (free)'); loadAdmin();
+      } catch (e) { toast('❌ ' + e.message); }
+    };
   });
 }
 
@@ -579,21 +592,37 @@ function openUser(uid) {
   const u = S.adminUsers.find(x => String(x.id) === String(uid));
   if (!u) return;
   const blocked = u.is_blocked;
+  const statusTxt = u.is_pending ? '⏳ ожидает одобрения' : (blocked ? '🚫 заблокирован' : (u.is_active ? '🟢 активен' : '🔴 неактивен'));
+  let actions = `<div class="actions">
+    <button class="btn ghost" id="u-stats">📊 Статистика</button>
+    <button class="btn ${blocked ? '' : 'danger'}" id="u-block">${blocked ? '✅ Разблокировать' : '🚫 Заблокировать'}</button>
+  </div>`;
+  if (u.is_pending) {
+    actions = `<button class="btn block" id="u-appr" style="margin-bottom:8px">✅ Одобрить (free)</button>` + actions;
+  }
   openSheet(esc(u.username || u.first_name || u.id),
     `
     <div class="row"><span>ID</span><b>${u.id}</b></div>
-    <div class="row"><span>Статус</span><b>${blocked ? '🚫 заблокирован' : (u.is_active ? '🟢 активен' : '🔴 неактивен')}</b></div>
+    <div class="row"><span>Статус</span><b>${statusTxt}</b></div>
     <div class="row"><span>Правил</span><b>${u.rules_count}</b></div>
+    ${u.access_level === 'premium' && u.premium_expires_at
+      ? '<div class="row"><span>💎 Премиум до</span><b>' + new Date(u.premium_expires_at).toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit' }) + '</b></div>'
+      : ''}
     <label>Уровень</label>
     <div class="seg" id="u-levels">
       <button data-lv="free" ${u.access_level==='free'?'class="sel"':''}>free</button>
       <button data-lv="premium" ${u.access_level==='premium'?'class="sel"':''}>💎 premium</button>
       <button data-lv="vip" ${u.access_level==='vip'?'class="sel"':''}>👑 vip</button>
     </div>`,
-    `<div class="actions">
-      <button class="btn ghost" id="u-stats">📊 Статистика</button>
-      <button class="btn ${blocked ? '' : 'danger'}" id="u-block">${blocked ? '✅ Разблокировать' : '🚫 Заблокировать'}</button>
-    </div>`);
+    actions);
+  if (u.is_pending) {
+    document.getElementById('u-appr').onclick = async () => {
+      try {
+        await api('/api/admin/grant','POST',{ target: uid, level: 'free' });
+        toast('✅ Одобрен (free)'); closeSheet(); loadAdmin();
+      } catch (e) { toast('❌ ' + e.message); }
+    };
+  }
   document.querySelectorAll('#u-levels button').forEach(b => {
     b.onclick = async () => {
       try { await api('/api/admin/user/level','POST',{ id: Number(uid), level: b.dataset.lv }); toast('✅ Уровень: ' + b.dataset.lv); loadAdmin(); }
@@ -638,8 +667,25 @@ async function load() {
     const [init, data] = await Promise.all([api('/api/init'), api('/api/settings')]);
     S.user = init.user; S.limits = init.limits;
     S.settings = data.settings; S.models = data.models; S.minPriceGlobal = data.min_price_global;
+
+    if (S.user.access_level === 'pending') {
+      document.getElementById('tabs').style.display = 'none';
+      document.getElementById('userinfo').textContent = '⏳ Запрос на доступ отправлен';
+      document.getElementById('screen-models').innerHTML =
+        '<div class="empty" style="padding-top:80px">⏳ <b>Запрос на доступ отправлен.</b><br><br>' +
+        'Администратор рассмотрит вашу заявку.<br>После одобрения обновите страницу 🔄</div>';
+      document.getElementById('screen-models').classList.add('active');
+      return;
+    }
+
+    const limitTxt = S.limits.max_models === null || S.limits.max_models === undefined ? '∞' : S.limits.max_models;
+    let premiumTxt = '';
+    if (S.user.access_level === 'premium' && S.user.premium_expires_at) {
+      const exp = new Date(S.user.premium_expires_at);
+      premiumTxt = ' · 💎 до ' + exp.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    }
     document.getElementById('userinfo').textContent =
-      (S.user.first_name || S.user.username || S.user.id) + ' · ' + S.user.access_level + ' · ' + S.limits.max_models + ' моделей';
+      (S.user.first_name || S.user.username || S.user.id) + ' · ' + S.user.access_level + ' · ' + limitTxt + ' моделей' + premiumTxt;
     const adm = document.getElementById('tab-admin');
     adm.style.display = S.user.is_admin ? '' : 'none';
     if (tab === 'admin') { await loadAdmin(); } else { renderModels(); }

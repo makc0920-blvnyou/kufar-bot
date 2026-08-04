@@ -4,7 +4,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import CallbackQuery, Message
 from loguru import logger
 
-from config import ADMIN_IDS, ALLOW_SELF_REGISTER, COMMAND_RATE_LIMIT_PER_MIN
+from config import ADMIN_IDS, COMMAND_RATE_LIMIT_PER_MIN, PENDING_LEVEL
 from database.db import ensure_user, get_user
 
 
@@ -45,15 +45,23 @@ class AuthMiddleware(BaseMiddleware):
         db_user = await get_user(user_id)
 
         if db_user is None:
-            if ALLOW_SELF_REGISTER:
-                db_user = await ensure_user(user_id, username, first_name)
-                logger.info(f"Новый пользователь: {user_id} (@{username or '—'})")
-            else:
-                await _answer(event, "🚫 Нет доступа. Свяжитесь с администратором.")
-                return
+            db_user = await ensure_user(user_id, username, first_name)
+            logger.info(f"Новый пользователь (pending): {user_id} (@{username or '—'})")
 
         if db_user.is_blocked or not db_user.is_active:
             await _answer(event, "🚫 Доступ заблокирован.")
+            return
+
+        # Pending: разрешаем только /start, всё остальное — «запрос в обработке»
+        if db_user.access_level == PENDING_LEVEL:
+            if isinstance(event, Message) and event.text and event.text.strip().startswith("/start"):
+                data["db_user"] = db_user
+                return await handler(event, data)
+            await _answer(
+                event,
+                "⏳ Запрос отправлен администратору.\n"
+                "Как только вам выдадут доступ — бот заработает.",
+            )
             return
 
         data["db_user"] = db_user
