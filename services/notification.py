@@ -43,6 +43,19 @@ def _find_model_limit(title: str, model: str) -> float | None:
     return None
 
 
+def _price_range(setting: UserSettings | None) -> str | None:
+    if setting is None:
+        return None
+    lo, hi = setting.min_price, setting.max_price
+    if lo and hi:
+        return f"{lo:,.0f} – {hi:,.0f} BYN"
+    if hi:
+        return f"до {hi:,.0f} BYN"
+    if lo:
+        return f"от {lo:,.0f} BYN"
+    return None
+
+
 def format_listing(listing: dict, setting: UserSettings | None = None) -> str:
     title = escape(listing.get("title", "Без названия"))
     price = escape(listing.get("price", "Цена не указана"))
@@ -53,15 +66,22 @@ def format_listing(listing: dict, setting: UserSettings | None = None) -> str:
 
     parts: list[str] = []
 
-    # НОВОЕ + относительное время
+    # Шапка: модель + бейдж нового + время
     when = _relative_time(listing.get("date"))
-    badge = "🆕 <b>НОВОЕ</b> " if when == "только что" else ""
-    parts.append(f"📱 {badge}<b>{title}</b>")
+    badge = " 🆕" if when == "только что" else ""
+    parts.append(f"📱 <b>{title}</b>{badge}")
+    meta = []
     if when:
-        parts.append(f"🕒 {when}")
+        meta.append(f"🕒 {when}")
+    meta.append(f"📍 {city}")
+    parts.append(" · ".join(meta))
 
-    parts.append(f"💰 {price}")
-    parts.append(f"📍 {city}")
+    # Цена + настроенный лимит
+    parts.append("")
+    parts.append(f"💰 <b>{price}</b>")
+    rng = _price_range(setting)
+    if rng:
+        parts.append(f"🎯 Ваш лимит: <b>{rng}</b>")
 
     raw = listing.get("price_raw")
     limit = setting.max_price if setting is not None else None
@@ -76,19 +96,25 @@ def format_listing(listing: dict, setting: UserSettings | None = None) -> str:
                 diff = ((model_limit - raw) / model_limit) * 100
                 parts.append(f"🎯 Ниже рынка на <b>{diff:.0f}%</b>")
 
+    # Характеристики одной строкой
+    specs = []
+    storage = listing.get("storage", "")
+    if storage:
+        specs.append(f"💾 {escape(storage)}")
     if battery:
-        parts.append(f"🔋 АКБ: <b>{escape(str(battery))}</b>")
+        specs.append(f"🔋 АКБ: <b>{escape(str(battery))}</b>")
+    if specs:
+        parts.append("")
+        parts.append(" · ".join(specs))
 
-    if setting is None or setting.show_description:
-        if desc:
-            parts.append(f"{escape(desc[:500])}")
+    # Описание — всегда, если есть
+    if desc:
+        parts.append("")
+        parts.append("📄 <b>Описание:</b>")
+        parts.append(escape(desc[:700]) + ("…" if len(desc) > 700 else ""))
 
-    if setting is not None:
-        storage = listing.get("storage", "")
-        if storage:
-            parts.append(f"💾 {escape(storage)}")
-
-    parts.append(f"🔗 {url}")
+    parts.append("")
+    parts.append(f"🔗 <a href=\"{url}\">Открыть на Kufar</a>")
     return "\n".join(parts)
 
 
