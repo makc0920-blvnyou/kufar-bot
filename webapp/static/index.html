@@ -613,7 +613,8 @@ function renderPriceSection() {
       <div class="u-meta">мед. ${fmt(m.median)} · сред. ${fmt(m.avg)} · Q1 ${fmt(m.q1)} · Q3 ${fmt(m.q3)}</div>
       <div class="u-meta">мин ${fmt(m.min)} · макс ${fmt(m.max)}</div>
     </div>`).join('');
-  return '<div class="section-title">📊 Цены по моделям</div>' + rows;
+  return '<div class="section-title">📊 Цены по моделям</div>' +
+    '<button class="btn ghost small" id="a-copy-prices" style="margin-bottom:6px">📋 Скопировать текстом</button>' + rows;
 }
 
 function renderDelaySection() {
@@ -677,6 +678,20 @@ function renderAdmin() {
       await api('/api/admin/delays/reset', 'POST', {});
       toast('🗑 История задержек сброшена'); loadAdmin();
     } catch (e) { toast('❌ ' + e.message); }
+  };
+  const copyBtn = document.getElementById('a-copy-prices');
+  if (copyBtn) copyBtn.onclick = async () => {
+    const lines = S.adminPrices.map(m => `${m.model} | n=${m.count} | мед ${fmt(m.median)} | сред ${fmt(m.avg)} | Q1 ${fmt(m.q1)} | Q3 ${fmt(m.q3)} | мин ${fmt(m.min)} | макс ${fmt(m.max)}`);
+    const text = lines.join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('📋 Скопировано (' + S.adminPrices.length + ' моделей)');
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove();
+      toast('📋 Скопировано (' + S.adminPrices.length + ' моделей)');
+    }
   };
   const q = document.getElementById('a-search');
   if (q) q.oninput = e => { adminQuery = e.target.value; filterAdmin(); };
