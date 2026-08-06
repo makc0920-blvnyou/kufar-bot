@@ -1,0 +1,16 @@
+name: keepalive
+
+on:
+  schedule:
+    # Каждые 5 минут — Render free tier засыпает через ~15 мин без трафика
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          code=$(curl -fsS -o /dev/null -w "%{http_code}" https://kufar-bot-i9w9.onrender.com/health) || true
+          echo "health status: $code"
