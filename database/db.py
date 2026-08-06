@@ -618,6 +618,30 @@ async def notification_exists(user_id: int, listing_id: str) -> bool:
         return result.scalar_one_or_none() is not None
 
 
+async def load_notification_map() -> dict[int, set[str]]:
+    """user_id -> множество listing_id (уже отправленных). Для матчинга в памяти."""
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Notification.user_id, Notification.listing_id)
+        )
+    out: dict[int, set[str]] = {}
+    for uid, lid in result.all():
+        out.setdefault(uid, set()).add(lid)
+    return out
+
+
+async def load_hidden_map() -> dict[int, set[str]]:
+    """user_id -> множество скрытых моделей. Для матчинга в памяти."""
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(HiddenModel.user_id, HiddenModel.model)
+        )
+    out: dict[int, set[str]] = {}
+    for uid, model in result.all():
+        out.setdefault(uid, set()).add(model)
+    return out
+
+
 async def record_notification(user_id: int, listing_id: str) -> None:
     """Записывает факт отправки (дедуп). Игнорирует дубли (гонки/несколько правил).
 

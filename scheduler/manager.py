@@ -13,6 +13,8 @@ from config import (
 from database.db import (
     get_active_settings,
     is_model_hidden,
+    load_hidden_map,
+    load_notification_map,
     notification_exists,
     record_notification,
     sync_listing,
@@ -204,12 +206,17 @@ async def check_all_users(bot: Bot) -> int:
 
         hits: list[tuple[Any, dict[str, Any]]] = []
         seen: set[tuple[int, str]] = set()
+        notified = await load_notification_map()
+        hidden = await load_hidden_map()
         for setting in settings:
             interval = setting.check_interval or DEFAULT_CHECK_INTERVAL_SECONDS
             last = _last_run_by_setting.get(setting.id, 0.0)
             if now - last < interval:
                 continue
             _last_run_by_setting[setting.id] = now
+
+            notified_lids = notified.get(setting.user_id, set())
+            hidden_models = hidden.get(setting.user_id, set())
 
             for listing in listings:
                 lid = listing.get("id", "")
@@ -218,9 +225,10 @@ async def check_all_users(bot: Bot) -> int:
                 key = (setting.user_id, lid)
                 if key in seen:
                     continue  # пользователь уже получит это объявление (два правила = одно письмо)
-                if await notification_exists(setting.user_id, lid):
+                if lid in notified_lids:
                     continue
-                if await is_model_hidden(setting.user_id, listing.get("model", "")):
+                model = listing.get("model", "")
+                if model and model in hidden_models:
                     continue
                 if not match_setting(listing, setting):
                     continue
