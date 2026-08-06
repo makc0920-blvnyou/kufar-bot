@@ -9,7 +9,7 @@ from aiogram.types import MenuButtonWebApp, WebAppInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
-from config import BOT_TOKEN, CHECK_LOOP_SECONDS, WEBAPP_URL
+from config import BOT_TOKEN, CHECK_LOOP_SECONDS, WEBAPP_BASE, WEBAPP_URL
 from database.db import init_db
 from bot.middlewares.auth import AuthMiddleware, ThrottlingMiddleware
 from scheduler.manager import check_all_users
@@ -85,10 +85,11 @@ async def _keepalive_loop() -> None:
     import aiohttp
 
     await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+    health_url = f"{WEBAPP_BASE}/health"
     async with aiohttp.ClientSession() as session:
         while True:
             try:
-                async with session.get(f"{WEBAPP_URL.rstrip('/')}/health", timeout=10) as resp:
+                async with session.get(health_url, timeout=10) as resp:
                     if resp.status != 200:
                         logger.warning(f"keepalive: статус {resp.status}")
             except Exception as e:
