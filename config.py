@@ -47,8 +47,8 @@ DATABASE_URL: str = _env(
 # --- Планировщик -------------------------------------------------------------
 CHECK_LOOP_SECONDS: int = _env_int("CHECK_LOOP_SECONDS", 15)  # тик цикла
 MIN_KUFAR_INTERVAL_SECONDS: int = _env_int("MIN_KUFAR_INTERVAL_SECONDS", 15)  # рейт-лимит API
-KUFAR_CACHE_TTL_SECONDS: int = _env_int("KUFAR_CACHE_TTL_SECONDS", 30)  # кэш списка
-DEFAULT_CHECK_INTERVAL_SECONDS: int = _env_int("DEFAULT_CHECK_INTERVAL_SECONDS", 300)
+KUFAR_CACHE_TTL_SECONDS: int = _env_int("KUFAR_CACHE_TTL_SECONDS", 15)  # кэш списка
+DEFAULT_CHECK_INTERVAL_SECONDS: int = _env_int("DEFAULT_CHECK_INTERVAL_SECONDS", 60)
 
 # --- Парсер ------------------------------------------------------------------
 KEYWORDS: str = _env("KEYWORDS", "iPhone")

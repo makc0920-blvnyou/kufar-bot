@@ -28,18 +28,36 @@ _fetch_cache: list[dict[str, Any]] | None = None
 _fetch_cache_time: float = 0.0
 
 _detail_cache: dict[str, dict[str, Any]] = {}
+_enrich_sem = asyncio.Semaphore(4)
 
 
-async def _enriched(listing: dict[str, Any]) -> dict[str, Any]:
-    """Достраивает описание/телефон из страницы объявления (поисковое API их не отдаёт)."""
-    lid = listing.get("id", "")
-    if not lid or listing.get("description"):
-        return listing
-    if lid not in _detail_cache:
+async def _fetch_details_one(lid: str) -> None:
+    if lid in _detail_cache:
+        return
+    try:
         extra = await fetch_listing_details(lid)
         _detail_cache[lid] = extra if extra else {}
-        await asyncio.sleep(0.3)  # щадим Куфар
-    extra = _detail_cache.get(lid, {})
+    except Exception as e:
+        logger.debug(f"Не удалось обогатить {lid}: {e}")
+        _detail_cache[lid] = {}
+
+
+async def _prefetch_details(lids: list[str]) -> None:
+    """Параллельно дотягивает описание/телефон со страниц объявлений."""
+    need = [lid for lid in dict.fromkeys(lids) if lid and lid not in _detail_cache]
+    if not need:
+        return
+
+    async def _guarded(lid: str) -> None:
+        async with _enrich_sem:
+            await _fetch_details_one(lid)
+
+    await asyncio.gather(*(_guarded(lid) for lid in need))
+
+
+def _apply_extra(listing: dict[str, Any]) -> dict[str, Any]:
+    """Возвращает объявление с обогащёнными описанием/телефоном."""
+    extra = _detail_cache.get(listing.get("id", ""), {})
     if not extra:
         return listing
     merged = dict(listing)
@@ -126,7 +144,7 @@ async def check_for_user(bot: Bot, user_id: int) -> int:
     if not listings:
         return 0
 
-    sent_count = 0
+    hits: list[tuple[Any, dict[str, Any]]] = []
     for setting in settings:
         if not setting.is_active:
             continue
@@ -140,11 +158,16 @@ async def check_for_user(bot: Bot, user_id: int) -> int:
                 continue
             if not match_setting(listing, setting):
                 continue
-            enriched = await _enriched(listing)
-            ok = await send_listing_to_user(bot, user_id, setting, enriched)
-            if ok:
-                await record_notification(user_id, lid)
-                sent_count += 1
+            hits.append((setting, listing))
+
+    await _prefetch_details([l.get("id", "") for _, l in hits])
+
+    sent_count = 0
+    for setting, listing in hits:
+        ok = await send_listing_to_user(bot, user_id, setting, _apply_extra(listing))
+        if ok:
+            await record_notification(user_id, listing.get("id", ""))
+            sent_count += 1
     return sent_count
 
 
@@ -169,7 +192,7 @@ async def check_all_users(bot: Bot) -> int:
             if lid and not await listing_exists(lid):
                 await save_listing(listing)
 
-        sent_count = 0
+        hits: list[tuple[Any, dict[str, Any]]] = []
         for setting in settings:
             interval = setting.check_interval or DEFAULT_CHECK_INTERVAL_SECONDS
             last = _last_run_by_setting.get(setting.id, 0.0)
@@ -187,11 +210,16 @@ async def check_all_users(bot: Bot) -> int:
                     continue
                 if not match_setting(listing, setting):
                     continue
-                enriched = await _enriched(listing)
-                ok = await send_listing_to_user(bot, setting.user_id, setting, enriched)
-                if ok:
-                    await record_notification(setting.user_id, lid)
-                    sent_count += 1
+                hits.append((setting, listing))
+
+        await _prefetch_details([l.get("id", "") for _, l in hits])
+
+        sent_count = 0
+        for setting, listing in hits:
+            ok = await send_listing_to_user(bot, setting.user_id, setting, _apply_extra(listing))
+            if ok:
+                await record_notification(setting.user_id, listing.get("id", ""))
+                sent_count += 1
 
         if sent_count:
             logger.info(f"Проверка: отправлено {sent_count} уведомлений")
