@@ -13,10 +13,9 @@ from config import (
 from database.db import (
     get_active_settings,
     is_model_hidden,
-    listing_exists,
     notification_exists,
     record_notification,
-    save_listing,
+    sync_listing,
 )
 from database.locations import REGION_NAMES
 from parser.kufar import fetch_listing_details, fetch_listings
@@ -186,11 +185,12 @@ async def check_all_users(bot: Bot) -> int:
         if not listings:
             return 0
 
-        # Сначала сохраняем новые объявления глобально (дедуп + избранное)
+        # Сначала сохраняем новые объявления глобально (дедуп + избранное);
+        # при изменении цены у существующих обновляем её (история цен для админки).
         for listing in listings:
             lid = listing.get("id", "")
-            if lid and not await listing_exists(lid):
-                await save_listing(listing)
+            if lid:
+                await sync_listing(listing)
 
         hits: list[tuple[Any, dict[str, Any]]] = []
         for setting in settings:

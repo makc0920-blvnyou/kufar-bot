@@ -51,6 +51,8 @@ async def init_web_server() -> web.AppRunner:
     app.router.add_post("/api/hidden/remove", webapp_api.api_hidden_remove)
 
     app.router.add_get("/api/admin/dashboard", webapp_api.api_admin_dashboard)
+    app.router.add_get("/api/admin/prices", webapp_api.api_admin_prices)
+    app.router.add_get("/api/admin/delays", webapp_api.api_admin_delays)
     app.router.add_get("/api/admin/users", webapp_api.api_admin_users)
     app.router.add_post("/api/admin/user/level", webapp_api.api_admin_user_level)
     app.router.add_post("/api/admin/user/block", webapp_api.api_admin_user_block)

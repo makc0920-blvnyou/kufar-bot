@@ -502,6 +502,42 @@ async def get_listing(listing_id: str) -> Optional[Listing]:
         return await session.get(Listing, listing_id)
 
 
+async def sync_listing(listing: dict[str, Any]) -> bool:
+    """Сохранить объявление или обновить цену при её изменении.
+
+    Возвращает True, если объявление новое. Одна SELECT-операция на элемент;
+    UPDATE выполняется только при реальном изменении цены.
+    """
+    lid = listing.get("id", "")
+    async with SessionLocal() as session:
+        existing = await session.get(Listing, lid)
+        if existing is None:
+            row = Listing(
+                id=lid,
+                title=listing.get("title", ""),
+                price=listing.get("price", ""),
+                price_raw=listing.get("price_raw"),
+                city=listing.get("city", ""),
+                url=listing.get("url", ""),
+                description=listing.get("description", ""),
+                model=listing.get("model", ""),
+                storage=listing.get("storage", ""),
+                images=json.dumps(listing.get("images", []), ensure_ascii=False),
+                found_at=listing.get("date", ""),
+                fetched_at=datetime.now().isoformat(),
+            )
+            session.add(row)
+            await session.commit()
+            return True
+        new_price_raw = listing.get("price_raw")
+        if existing.price_raw != new_price_raw:
+            existing.price = listing.get("price", "")
+            existing.price_raw = new_price_raw
+            existing.fetched_at = datetime.now().isoformat()
+            await session.commit()
+        return False
+
+
 async def get_recent_price_raw(model: str, hours: int = 12) -> list[float]:
     cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
     async with SessionLocal() as session:
@@ -615,3 +651,96 @@ async def total_listings_since(days: int) -> int:
             select(func.count(Listing.id)).where(Listing.fetched_at >= cutoff.isoformat())
         )
         return int(result.scalar() or 0)
+
+
+def _percentile(sorted_values: list[float], k: float) -> float:
+    n = len(sorted_values)
+    if n == 0:
+        return 0.0
+    return sorted_values[min(n - 1, int(k * (n - 1)))]
+
+
+async def prices_by_model() -> list[dict]:
+    """Текущая цена каждого объявления сгруппирована по модели.
+
+    Возвращает медиану, среднее, Q1/Q3, min/max и число объявлений
+    по каждой модели. Читает только price_raw из listings.
+    """
+    from collections import defaultdict
+
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Listing.model, Listing.price_raw).where(
+                Listing.model != "",
+                Listing.price_raw.is_not(None),
+            )
+        )
+        by_model: dict[str, list[float]] = defaultdict(list)
+        for model, price in result.all():
+            by_model[model].append(price)
+
+    out = []
+    for model, prices in by_model.items():
+        prices.sort()
+        n = len(prices)
+        total = sum(prices)
+        out.append(
+            {
+                "model": model,
+                "count": n,
+                "avg": round(total / n),
+                "median": _percentile(prices, 0.50),
+                "q1": _percentile(prices, 0.25),
+                "q3": _percentile(prices, 0.75),
+                "min": prices[0],
+                "max": prices[-1],
+            }
+        )
+    out.sort(key=lambda x: (-x["count"], x["model"]))
+    return out
+
+
+async def delay_stats(days: int = 3) -> dict:
+    """Задержка доставки уведомлений: время публикации -> момент отправки.
+
+    Считается как sent_at - found_at для всех уведомлений за период.
+    Чисто агрегирующий запрос, не трогает цикл шедулера.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+
+    cutoff = _dt.now(_tz.utc) - timedelta(days=days)
+    async with SessionLocal() as session:
+        result = await session.execute(
+            select(Notification.sent_at, Listing.found_at)
+            .join(Listing, Listing.id == Notification.listing_id)
+            .where(Notification.sent_at >= cutoff)
+        )
+
+    delays: list[int] = []
+    for sent, found in result.all():
+        if not sent or not found:
+            continue
+        try:
+            found_dt = (
+                _dt.fromisoformat(found.replace("Z", "+00:00"))
+                if isinstance(found, str)
+                else found
+            )
+            if found_dt.tzinfo is None:
+                found_dt = found_dt.replace(tzinfo=_tz.utc)
+            sent_dt = sent if sent.tzinfo else sent.replace(tzinfo=_tz.utc)
+            delays.append(max(0, int((sent_dt - found_dt).total_seconds())))
+        except (ValueError, TypeError):
+            continue
+
+    if not delays:
+        return {"count": 0, "median": 0, "avg": 0, "p90": 0, "max": 0}
+
+    delays.sort()
+    return {
+        "count": len(delays),
+        "median": _percentile(delays, 0.50),
+        "avg": round(sum(delays) / len(delays)),
+        "p90": _percentile(delays, 0.90),
+        "max": delays[-1],
+    }

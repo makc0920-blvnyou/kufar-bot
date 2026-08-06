@@ -235,7 +235,7 @@ textarea { min-height: 90px; resize: vertical; }
 
 <script>
 const Telegram = window.Telegram;
-let S = { user:null, limits:{max_models:999,min_interval:300}, settings:[], models:[], minPriceGlobal:95, saved:[], stats:null, adminUsers:[], adminDash:null, locations:{} };
+let S = { user:null, limits:{max_models:999,min_interval:300}, settings:[], models:[], minPriceGlobal:95, saved:[], stats:null, adminUsers:[], adminDash:null, adminPrices:[], adminDelays:null, locations:{} };
 let tab = 'models';
 let adminQuery = '';
 
@@ -597,6 +597,39 @@ function renderStats() {
 
 /* ============================ АДМИН ============================ */
 
+function fmtSec(s) {
+  if (s < 60) return s + ' с';
+  if (s < 3600) return Math.round(s/60) + ' мин';
+  return (s/3600).toFixed(1) + ' ч';
+}
+
+function renderPriceSection() {
+  const p = S.adminPrices;
+  if (!p) return '<div class="section-title">📊 Цены по моделям</div><div class="empty">Загрузка...</div>';
+  if (!p.length) return '<div class="section-title">📊 Цены по моделям</div><div class="empty">Нет данных</div>';
+  const rows = p.slice(0, 20).map(m => `
+    <div class="card" style="padding:8px 12px">
+      <div class="u-name">${esc(m.model)} <span class="u-meta">(${m.count})</span></div>
+      <div class="u-meta">мед. ${fmt(m.median)} · сред. ${fmt(m.avg)} · Q1 ${fmt(m.q1)} · Q3 ${fmt(m.q3)}</div>
+      <div class="u-meta">мин ${fmt(m.min)} · макс ${fmt(m.max)}</div>
+    </div>`).join('');
+  return '<div class="section-title">📊 Цены по моделям</div>' + rows;
+}
+
+function renderDelaySection() {
+  const dl = S.adminDelays;
+  if (!dl) return '<div class="section-title">⏱ Задержка доставки</div><div class="empty">Загрузка...</div>';
+  if (!dl.count) return '<div class="section-title">⏱ Задержка доставки</div><div class="empty">Нет уведомлений</div>';
+  return '<div class="section-title">⏱ Задержка доставки (3 дня)</div>' +
+    '<div class="stat-grid" style="margin-bottom:6px">' +
+    '<div class="stat-box"><div class="num">' + fmtSec(dl.median) + '</div><div class="lbl">медиана</div></div>' +
+    '<div class="stat-box"><div class="num">' + fmtSec(dl.avg) + '</div><div class="lbl">среднее</div></div>' +
+    '<div class="stat-box"><div class="num">' + fmtSec(dl.p90) + '</div><div class="lbl">P90</div></div>' +
+    '<div class="stat-box"><div class="num">' + fmtSec(dl.max) + '</div><div class="lbl">макс</div></div>' +
+    '<div class="stat-box"><div class="num">' + dl.count + '</div><div class="lbl">уведомл.</div></div>' +
+    '</div>';
+}
+
 function renderAdmin() {
   const el = document.getElementById('screen-admin');
   const d = S.adminDash;
@@ -608,7 +641,9 @@ function renderAdmin() {
       <div class="stat-grid" style="margin-bottom:6px">
         <div class="stat-box"><div class="num">${d.users_count}</div><div class="lbl">Всего юзеров</div></div>
         <div class="stat-box"><div class="num">${d.active_count}</div><div class="lbl">Активных</div></div>
-      </div>
+      </div>` +
+      renderPriceSection() +
+      renderDelaySection() + `
       <div class="section-title">👥 Пользователи (${S.adminUsers.length})</div>
       <input class="search" id="a-search" placeholder="🔎 Поиск по имени, @username, ID…" value="${esc(adminQuery)}">
       ${S.adminUsers.map(u => `
@@ -823,8 +858,11 @@ async function loadStats() {
 }
 async function loadAdmin() {
   try {
-    const [d, u] = await Promise.all([api('/api/admin/dashboard'), api('/api/admin/users')]);
-    S.adminDash = d; S.adminUsers = u.users;
+    const [d, u, p, dl] = await Promise.all([
+      api('/api/admin/dashboard'), api('/api/admin/users'),
+      api('/api/admin/prices'), api('/api/admin/delays'),
+    ]);
+    S.adminDash = d; S.adminUsers = u.users; S.adminPrices = p.models; S.adminDelays = dl.stats;
     if (adminQuery) filterAdmin(); else renderAdmin();
   } catch (e) { toast('❌ ' + e.message); }
 }

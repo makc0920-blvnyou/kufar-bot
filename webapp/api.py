@@ -32,6 +32,10 @@ from database.db import (
     set_access_level,
     update_setting,
 )
+from database.db import (
+    delay_stats,
+    prices_by_model,
+)
 from database.locations import LOCATIONS
 from webapp.auth import extract_user, validate_init_data
 
@@ -479,6 +483,24 @@ async def api_admin_dashboard(request: web.Request) -> web.Response:
         dashboard=await format_admin_dashboard(),
         admins=ADMIN_IDS,
     )
+
+
+async def api_admin_prices(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+    return _ok(models=await prices_by_model())
+
+
+async def api_admin_delays(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+    try:
+        days = int(request.rel_url.query.get("days", "3"))
+    except ValueError:
+        days = 3
+    return _ok(stats=await delay_stats(days=days))
 
 
 async def api_admin_users(request: web.Request) -> web.Response:
