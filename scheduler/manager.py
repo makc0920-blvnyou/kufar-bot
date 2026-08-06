@@ -42,7 +42,11 @@ async def _fetch_details_one(lid: str) -> None:
 
 
 async def _prefetch_details(lids: list[str]) -> None:
-    """Параллельно дотягивает описание/телефон со страниц объявлений."""
+    """Параллельно дотягивает описание/телефон со страниц объявлений.
+
+    Обёрнуто в общий таймаут: prefetch не должен застрять дольше 25с,
+    иначе тик шедулера перекрывает свой интервал.
+    """
     need = [lid for lid in dict.fromkeys(lids) if lid and lid not in _detail_cache]
     if not need:
         return
@@ -51,7 +55,13 @@ async def _prefetch_details(lids: list[str]) -> None:
         async with _enrich_sem:
             await _fetch_details_one(lid)
 
-    await asyncio.gather(*(_guarded(lid) for lid in need))
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*(_guarded(lid) for lid in need)),
+            timeout=25.0,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Prefetch деталей превысил 25с — пропускаем обогащение")
 
 
 def _apply_extra(listing: dict[str, Any]) -> dict[str, Any]:
@@ -193,6 +203,7 @@ async def check_all_users(bot: Bot) -> int:
                 await sync_listing(listing)
 
         hits: list[tuple[Any, dict[str, Any]]] = []
+        seen: set[tuple[int, str]] = set()
         for setting in settings:
             interval = setting.check_interval or DEFAULT_CHECK_INTERVAL_SECONDS
             last = _last_run_by_setting.get(setting.id, 0.0)
@@ -204,19 +215,27 @@ async def check_all_users(bot: Bot) -> int:
                 lid = listing.get("id", "")
                 if not lid:
                     continue
+                key = (setting.user_id, lid)
+                if key in seen:
+                    continue  # пользователь уже получит это объявление (два правила = одно письмо)
                 if await notification_exists(setting.user_id, lid):
                     continue
                 if await is_model_hidden(setting.user_id, listing.get("model", "")):
                     continue
                 if not match_setting(listing, setting):
                     continue
+                seen.add(key)
                 hits.append((setting, listing))
 
         await _prefetch_details([l.get("id", "") for _, l in hits])
 
         sent_count = 0
         for setting, listing in hits:
-            ok = await send_listing_to_user(bot, setting.user_id, setting, _apply_extra(listing))
+            try:
+                ok = await send_listing_to_user(bot, setting.user_id, setting, _apply_extra(listing))
+            except Exception as e:
+                logger.warning(f"Не удалось отправить {setting.user_id}/{listing.get('id', '')}: {e}")
+                continue
             if ok:
                 await record_notification(setting.user_id, listing.get("id", ""))
                 sent_count += 1

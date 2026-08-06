@@ -619,9 +619,31 @@ async def notification_exists(user_id: int, listing_id: str) -> bool:
 
 
 async def record_notification(user_id: int, listing_id: str) -> None:
-    async with SessionLocal() as session:
-        session.add(Notification(user_id=user_id, listing_id=listing_id))
-        await session.commit()
+    """Записывает факт отправки (дедуп). Игнорирует дубли (гонки/несколько правил).
+
+    Атомарный upsert: если строка уже есть — ничего не делаем и не роняем тик.
+    """
+    if engine.dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        stmt = (
+            pg_insert(Notification)
+            .values(user_id=user_id, listing_id=listing_id)
+            .on_conflict_do_nothing(
+                index_elements=["user_id", "listing_id"]
+            )
+        )
+        async with SessionLocal() as session:
+            await session.execute(stmt)
+            await session.commit()
+        return
+    try:
+        async with SessionLocal() as session:
+            session.add(Notification(user_id=user_id, listing_id=listing_id))
+            await session.commit()
+    except Exception:
+        async with SessionLocal() as session:
+            await session.rollback()
 
 
 async def count_notifications_for_user(user_id: int) -> int:
