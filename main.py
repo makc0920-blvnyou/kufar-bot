@@ -72,6 +72,30 @@ async def init_web_server() -> web.AppRunner:
     return runner
 
 
+_keepalive_task: asyncio.Task | None = None
+KEEPALIVE_INTERVAL_SECONDS = int(os.environ.get("KEEPALIVE_INTERVAL_SECONDS", 300))
+
+
+async def _keepalive_loop() -> None:
+    """Пингует собственный /health, чтобы Render free tier не уснул.
+
+    Free-инстанс засыпает через ~15 мин без входящего HTTP-трафика.
+    Само-пинг каждые 5 мин — входящий запрос, сбрасывает таймер сна.
+    """
+    import aiohttp
+
+    await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(f"{WEBAPP_URL.rstrip('/')}/health", timeout=10) as resp:
+                    if resp.status != 200:
+                        logger.warning(f"keepalive: статус {resp.status}")
+            except Exception as e:
+                logger.debug(f"keepalive: ошибка пинга: {e}")
+            await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+
+
 async def scheduled_tick() -> None:
     if _bot is None:
         return
@@ -150,6 +174,9 @@ async def main() -> None:
     # Сразу при старте чистим уже истёкшие premium
     asyncio.create_task(premium_expiry_tick())
 
+    global _keepalive_task
+    _keepalive_task = asyncio.create_task(_keepalive_loop())
+
     logger.info("🚀 Бот запущен. Ожидание обновлений...")
     try:
         await dp.start_polling(bot, skip_updates=True)
@@ -159,6 +186,8 @@ async def main() -> None:
         logger.exception(f"Критическая ошибка: {e}")
     finally:
         logger.info("⏹️  Остановка...")
+        if _keepalive_task is not None:
+            _keepalive_task.cancel()
         scheduler.shutdown(wait=False)
         await web_runner.cleanup()
         await bot.session.close()
