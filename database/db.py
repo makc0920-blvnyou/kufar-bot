@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from config import ACCESS_LIMITS, DATABASE_URL, PENDING_LEVEL, PREMIUM_DURATION_DAYS
 from database.models import (
+    AppMeta,
     Base,
     HiddenModel,
     Listing,
@@ -705,10 +706,22 @@ async def delay_stats(days: int = 3) -> dict:
 
     Считается как sent_at - found_at для всех уведомлений за период.
     Чисто агрегирующий запрос, не трогает цикл шедулера.
+    Если админ сбрасывал статистику, учитываются только уведомления после сброса.
     """
     from datetime import datetime as _dt, timezone as _tz
 
     cutoff = _dt.now(_tz.utc) - timedelta(days=days)
+    reset_since = await get_meta("delay_stats_since")
+    if reset_since:
+        try:
+            reset_dt = _dt.fromisoformat(reset_since.replace("Z", "+00:00"))
+            if reset_dt.tzinfo is None:
+                reset_dt = reset_dt.replace(tzinfo=_tz.utc)
+            if reset_dt > cutoff:
+                cutoff = reset_dt
+        except ValueError:
+            pass
+
     async with SessionLocal() as session:
         result = await session.execute(
             select(Notification.sent_at, Listing.found_at)
@@ -744,3 +757,32 @@ async def delay_stats(days: int = 3) -> dict:
         "p90": _percentile(delays, 0.90),
         "max": delays[-1],
     }
+
+
+# --- Служебные метаданные ----------------------------------------------------
+
+async def get_meta(key: str) -> Optional[str]:
+    async with SessionLocal() as session:
+        row = await session.get(AppMeta, key)
+        return row.value if row else None
+
+
+async def set_meta(key: str, value: str) -> None:
+    async with SessionLocal() as session:
+        row = await session.get(AppMeta, key)
+        if row is None:
+            session.add(AppMeta(key=key, value=value))
+        else:
+            row.value = value
+        await session.commit()
+
+
+async def reset_delay_stats() -> None:
+    """Обнуляет окно статистики задержек без удаления уведомлений.
+
+    Дедуп-записи (notifications) остаются на месте — повторных отправок нет,
+    но delay_stats будет считать только новые уведомления.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+
+    await set_meta("delay_stats_since", _dt.now(_tz.utc).isoformat())

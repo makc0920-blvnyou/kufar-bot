@@ -34,7 +34,9 @@ from database.db import (
 )
 from database.db import (
     delay_stats,
+    get_meta,
     prices_by_model,
+    reset_delay_stats,
 )
 from database.locations import LOCATIONS
 from webapp.auth import extract_user, validate_init_data
@@ -501,6 +503,14 @@ async def api_admin_delays(request: web.Request) -> web.Response:
     except ValueError:
         days = 3
     return _ok(stats=await delay_stats(days=days))
+
+
+async def api_admin_delays_reset(request: web.Request) -> web.Response:
+    db_user, err, code = await _require_admin(request)
+    if err:
+        return _fail(err, code)
+    await reset_delay_stats()
+    return _ok(reset_at=await get_meta("delay_stats_since"))
 
 
 async def api_admin_users(request: web.Request) -> web.Response:

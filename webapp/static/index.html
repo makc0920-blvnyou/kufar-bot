@@ -620,14 +620,15 @@ function renderDelaySection() {
   const dl = S.adminDelays;
   if (!dl) return '<div class="section-title">⏱ Задержка доставки</div><div class="empty">Загрузка...</div>';
   if (!dl.count) return '<div class="section-title">⏱ Задержка доставки</div><div class="empty">Нет уведомлений</div>';
-  return '<div class="section-title">⏱ Задержка доставки (3 дня)</div>' +
+  return '<div class="section-title">⏱ Задержка доставки</div>' +
     '<div class="stat-grid" style="margin-bottom:6px">' +
     '<div class="stat-box"><div class="num">' + fmtSec(dl.median) + '</div><div class="lbl">медиана</div></div>' +
     '<div class="stat-box"><div class="num">' + fmtSec(dl.avg) + '</div><div class="lbl">среднее</div></div>' +
     '<div class="stat-box"><div class="num">' + fmtSec(dl.p90) + '</div><div class="lbl">P90</div></div>' +
     '<div class="stat-box"><div class="num">' + fmtSec(dl.max) + '</div><div class="lbl">макс</div></div>' +
     '<div class="stat-box"><div class="num">' + dl.count + '</div><div class="lbl">уведомл.</div></div>' +
-    '</div>';
+    '</div>' +
+    '<button class="btn ghost small" id="a-delay-reset" style="margin-bottom:6px">🗑 Сбросить и собирать заново</button>';
 }
 
 function renderAdmin() {
@@ -669,6 +670,14 @@ function renderAdmin() {
 
   document.getElementById('a-grant').onclick = openGrant;
   document.getElementById('a-broadcast').onclick = openBroadcast;
+  const resetBtn = document.getElementById('a-delay-reset');
+  if (resetBtn) resetBtn.onclick = async () => {
+    if (!confirm('Сбросить историю задержек? Статистика начнёт собираться заново.')) return;
+    try {
+      await api('/api/admin/delays/reset', 'POST', {});
+      toast('🗑 История задержек сброшена'); loadAdmin();
+    } catch (e) { toast('❌ ' + e.message); }
+  };
   const q = document.getElementById('a-search');
   if (q) q.oninput = e => { adminQuery = e.target.value; filterAdmin(); };
   el.querySelectorAll('[data-au]').forEach(b => {
