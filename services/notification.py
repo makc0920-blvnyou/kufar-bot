@@ -190,6 +190,17 @@ async def send_listing_to_user(
             )
         return True
     except Exception as e:
+        logger.warning(f"Фото не прошло, отправляю текст ({listing.get('id', '?')}): {e}")
+
+    try:
+        await bot.send_message(
+            chat_id=user_id,
+            text=text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+        )
+        return True
+    except Exception as e:
         logger.error(f"Ошибка отправки объявления {listing.get('id', '?')} юзеру {user_id}: {e}")
         return False
 
