@@ -4,12 +4,26 @@ from typing import Any
 
 from aiogram import Bot
 from aiogram.enums import ParseMode
-from aiogram.types import InputMediaPhoto
+from aiogram.types import InputMediaPhoto, BufferedInputFile
 from loguru import logger
 
 from bot.keyboards.inline import build_listing_keyboard
 from config import ADMIN_IDS
 from database.models import UserSettings
+
+
+async def _download_image(url: str) -> bytes | None:
+    """Скачивать картинку для отправки файлом (если Telegram не может по URL)."""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(url, timeout=10.0, follow_redirects=True)
+            r.raise_for_status()
+            if r.headers.get("content-type", "").startswith("image/"):
+                return r.content
+    except Exception as e:
+        logger.debug(f"Не удалось скачать {url}: {e}")
+    return None
 
 
 def _relative_time(found_at: Any) -> str | None:
@@ -172,8 +186,8 @@ async def send_listing_to_user(
         except Exception as e:
             logger.debug(f"Медиа-группа не прошла ({listing.get('id', '?')}): {e}")
 
-    try:
-        if images:
+    if setting.send_photos and images:
+        try:
             await bot.send_photo(
                 chat_id=user_id,
                 photo=images[0],
@@ -181,16 +195,25 @@ async def send_listing_to_user(
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        else:
-            await bot.send_message(
-                chat_id=user_id,
-                text=text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        return True
-    except Exception as e:
-        logger.warning(f"Фото не прошло, отправляю текст ({listing.get('id', '?')}): {e}")
+            return True
+        except Exception as e:
+            logger.debug(f"Фото по URL не прошло ({listing.get('id', '?')}): {e}")
+
+    if setting.send_photos and images:
+        img_data = await _download_image(images[0])
+        if img_data:
+            try:
+                photo = BufferedInputFile(img_data, filename="photo.jpg")
+                await bot.send_photo(
+                    chat_id=user_id,
+                    photo=photo,
+                    caption=text,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb,
+                )
+                return True
+            except Exception as e:
+                logger.debug(f"Фото файлом не прошло ({listing.get('id', '?')}): {e}")
 
     try:
         await bot.send_message(
