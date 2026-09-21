@@ -71,12 +71,19 @@ def _normalize_db_url(url: str) -> str:
     return url
 
 
-engine = create_async_engine(
-    _normalize_db_url(DATABASE_URL),
-    echo=False,
-    pool_pre_ping=True,
-    connect_args={"ssl": "require"} if DATABASE_URL.startswith("postgresql://") else {},
-)
+try:
+    _db_url = _normalize_db_url(DATABASE_URL)
+    engine = create_async_engine(
+        _db_url,
+        echo=False,
+        pool_pre_ping=True,
+        connect_args={"ssl": "require"} if DATABASE_URL.startswith("postgresql://") else {},
+    )
+except Exception as e:
+    import sys
+    print(f"WARN: БД недоступна ({e}), работаем без неё", file=sys.stderr)
+    _db_url = "sqlite+aiosqlite:///data/kufar.db"
+    engine = create_async_engine(_db_url, echo=False)
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
