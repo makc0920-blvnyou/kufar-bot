@@ -10,7 +10,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from config import BOT_TOKEN, CHECK_LOOP_SECONDS, WEBAPP_BASE, WEBAPP_URL
-from database.db import init_db
+from database.db import init_db, engine
 from bot.middlewares.auth import AuthMiddleware, ThrottlingMiddleware
 from scheduler.manager import check_all_users
 from webapp import api as webapp_api
@@ -32,6 +32,43 @@ async def init_web_server() -> web.AppRunner:
     app = web.Application()
     app.router.add_get("/health", handle_health)
     app.router.add_get("/", handle_health)
+
+    # Временный эндпоинт миграции — удалить после использования
+    async def handle_migrate(request: web.Request) -> web.Response:
+        token = request.query.get("token", "")
+        if token != os.environ.get("MIGRATE_TOKEN", ""):
+            return web.Response(status=403, text="bad token")
+        neon_url = os.environ.get("NEON_URL", "")
+        if not neon_url:
+            return web.Response(text="NEON_URL not set in Railway env")
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy import text as sql_text
+        src = create_async_engine(neon_url.replace("postgresql://", "postgresql+asyncpg://"))
+        TABLES = ["users", "user_settings", "listings", "notifications", "saved_listings", "hidden_models", "app_meta"]
+        results = []
+        async with src.connect() as src_conn:
+            for table in TABLES:
+                try:
+                    rows = (await src_conn.execute(sql_text(f"SELECT * FROM {table}"))).mappings().all()
+                    if not rows:
+                        results.append(f"{table}: 0")
+                        continue
+                    cols = list(rows[0].keys())
+                    cols_sql = ", ".join(cols)
+                    placeholders = ", ".join(f":{c}" for c in cols)
+                    async with engine.begin() as dst_conn:
+                        for row in rows:
+                            await dst_conn.execute(
+                                sql_text(f"INSERT INTO {table} ({cols_sql}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"),
+                                dict(row),
+                            )
+                    results.append(f"{table}: {len(rows)} ok")
+                except Exception as e:
+                    results.append(f"{table}: ERR {e}")
+        await src.dispose()
+        return web.Response(text="\n".join(results))
+
+    app.router.add_get("/api/migrate", handle_migrate)
 
     app.router.add_get("/app", webapp_api.index)
     app.router.add_get("/api/init", webapp_api.api_init)
